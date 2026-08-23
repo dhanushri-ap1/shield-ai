@@ -4,6 +4,16 @@ import shap
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 
+from explanation_engine import (
+    generate_explanations,
+    print_explanations
+)
+
+from behavior_comparison import (
+    create_behavior_comparison,
+    print_behavior_comparison
+)
+
 
 # ==================================================
 # 1. LOAD DATA
@@ -11,9 +21,13 @@ from sklearn.ensemble import RandomForestClassifier
 
 print("Loading dataset...")
 
-df = pd.read_csv("data/raw/transactions.csv")
+df = pd.read_csv(
+    "data/raw/transactions.csv"
+)
 
-df["timestamp"] = pd.to_datetime(df["timestamp"])
+df["timestamp"] = pd.to_datetime(
+    df["timestamp"]
+)
 
 df = df.sort_values(
     ["customer_id", "timestamp"]
@@ -21,12 +35,14 @@ df = df.sort_values(
 
 
 # ==================================================
-# 2. BASIC TIME FEATURES
+# 2. TIME FEATURES
 # ==================================================
 
 print("Creating time features...")
 
-df["hour"] = df["timestamp"].dt.hour
+df["hour"] = (
+    df["timestamp"].dt.hour
+)
 
 df["is_odd_hour"] = (
     (df["hour"] >= 0) &
@@ -40,11 +56,16 @@ df["is_odd_hour"] = (
 
 print("Creating customer profiles...")
 
-normal = df[df["is_fraud"] == 0]
+normal = df[
+    df["is_fraud"] == 0
+]
 
+
+# Average transaction amount
 
 customer_avg = (
-    normal.groupby("customer_id")["amount"]
+    normal
+    .groupby("customer_id")["amount"]
     .mean()
 )
 
@@ -52,6 +73,21 @@ df["customer_avg_amount"] = (
     df["customer_id"]
     .map(customer_avg)
     .fillna(df["amount"].mean())
+)
+
+
+# Usual hour
+
+customer_usual_hour = (
+    normal
+    .groupby("customer_id")["hour"]
+    .mean()
+)
+
+df["usual_hour"] = (
+    df["customer_id"]
+    .map(customer_usual_hour)
+    .fillna(df["hour"].mean())
 )
 
 
@@ -66,12 +102,16 @@ df["amount_ratio"] = (
 
 
 # ==================================================
-# 5. NORMAL DEVICE
+# 5. DEVICE ANOMALY
 # ==================================================
 
 usual_device = (
-    normal.groupby("customer_id")["device_id"]
-    .agg(lambda x: x.mode().iloc[0])
+    normal
+    .groupby("customer_id")["device_id"]
+    .agg(
+        lambda x:
+        x.mode().iloc[0]
+    )
 )
 
 df["usual_device"] = (
@@ -80,17 +120,22 @@ df["usual_device"] = (
 )
 
 df["is_new_device"] = (
-    df["device_id"] != df["usual_device"]
+    df["device_id"] !=
+    df["usual_device"]
 ).astype(int)
 
 
 # ==================================================
-# 6. NORMAL LOCATION
+# 6. LOCATION ANOMALY
 # ==================================================
 
 usual_location = (
-    normal.groupby("customer_id")["ip_country"]
-    .agg(lambda x: x.mode().iloc[0])
+    normal
+    .groupby("customer_id")["ip_country"]
+    .agg(
+        lambda x:
+        x.mode().iloc[0]
+    )
 )
 
 df["usual_location"] = (
@@ -99,17 +144,22 @@ df["usual_location"] = (
 )
 
 df["is_new_location"] = (
-    df["ip_country"] != df["usual_location"]
+    df["ip_country"] !=
+    df["usual_location"]
 ).astype(int)
 
 
 # ==================================================
-# 7. NORMAL MERCHANT CATEGORY
+# 7. CATEGORY ANOMALY
 # ==================================================
 
 usual_category = (
-    normal.groupby("customer_id")["merchant_category"]
-    .agg(lambda x: x.mode().iloc[0])
+    normal
+    .groupby("customer_id")["merchant_category"]
+    .agg(
+        lambda x:
+        x.mode().iloc[0]
+    )
 )
 
 df["usual_category"] = (
@@ -124,12 +174,16 @@ df["is_new_category"] = (
 
 
 # ==================================================
-# 8. NORMAL PAYMENT METHOD
+# 8. PAYMENT METHOD ANOMALY
 # ==================================================
 
 usual_payment = (
-    normal.groupby("customer_id")["payment_method"]
-    .agg(lambda x: x.mode().iloc[0])
+    normal
+    .groupby("customer_id")["payment_method"]
+    .agg(
+        lambda x:
+        x.mode().iloc[0]
+    )
 )
 
 df["usual_payment_method"] = (
@@ -152,23 +206,27 @@ df["time_deviation"] = (
     df["usual_hour"]
 ).abs()
 
-df["time_deviation"] = df[
-    "time_deviation"
-].apply(
-    lambda x: min(x, 24 - x)
+df["time_deviation"] = (
+    df["time_deviation"]
+    .apply(
+        lambda x:
+        min(x, 24 - x)
+    )
 )
 
 
 # ==================================================
-# 10. FAST TRANSACTION VELOCITY
+# 10. TRANSACTION VELOCITY
 # ==================================================
 
-print("Calculating transaction velocity...")
-
-# Data is already sorted by customer + timestamp.
+print(
+    "Calculating transaction velocity..."
+)
 
 df["transactions_last_10min"] = (
-    df.groupby("customer_id")
+
+    df
+    .groupby("customer_id")
     .rolling(
         "10min",
         on="timestamp"
@@ -185,11 +243,13 @@ df["transactions_last_10min"] = (
 
 
 # ==================================================
-# 11. FAST SPENDING VELOCITY
+# 11. SPENDING VELOCITY
 # ==================================================
 
 df["amount_spent_last_1h"] = (
-    df.groupby("customer_id")
+
+    df
+    .groupby("customer_id")
     .rolling(
         "1h",
         on="timestamp"
@@ -209,15 +269,22 @@ df["amount_spent_last_1h"] = (
 # 12. FAILED ATTEMPTS
 # ==================================================
 
-print("Calculating failed attempts...")
+print(
+    "Calculating failed attempts..."
+)
 
 df["failed_flag"] = (
-    df["transaction_status"] == "failed"
+    df["transaction_status"]
+    == "failed"
 ).astype(int)
 
 
-df["failed_attempts_before_success"] = (
-    df.groupby("customer_id")["failed_flag"]
+df[
+    "failed_attempts_before_success"
+] = (
+
+    df
+    .groupby("customer_id")["failed_flag"]
     .transform(
         lambda x:
         x.shift(1)
@@ -234,10 +301,13 @@ df["failed_attempts_before_success"] = (
 # 13. DEVICE SHARING
 # ==================================================
 
-print("Calculating device sharing...")
+print(
+    "Calculating device sharing..."
+)
 
 device_accounts = (
-    df.groupby("device_id")["customer_id"]
+    df
+    .groupby("device_id")["customer_id"]
     .nunique()
 )
 
@@ -248,7 +318,7 @@ df["device_account_count"] = (
 
 
 # ==================================================
-# 14. BEHAVIOR DEVIATION
+# 14. BEHAVIOR DEVIATION SCORE
 # ==================================================
 
 df["behavior_deviation_score"] = (
@@ -312,6 +382,7 @@ features = [
     "time_deviation",
 
     "behavior_deviation_score"
+
 ]
 
 
@@ -324,24 +395,28 @@ y = df["is_fraud"]
 # 16. TRAIN / TEST
 # ==================================================
 
-print("Training model...")
+X_train, X_test, y_train, y_test = (
 
-X_train, X_test, y_train, y_test = train_test_split(
+    train_test_split(
 
-    X,
-    y,
+        X,
 
-    test_size=0.2,
+        y,
 
-    random_state=42,
+        test_size=0.2,
 
-    stratify=y
+        random_state=42,
+
+        stratify=y
+    )
 )
 
 
 # ==================================================
-# 17. RANDOM FOREST
+# 17. MODEL
 # ==================================================
+
+print("Training model...")
 
 model = RandomForestClassifier(
 
@@ -364,14 +439,18 @@ model.fit(
 
 
 # ==================================================
-# 18. SELECT A HIGH-RISK TRANSACTION
+# 18. FIND HIGH-RISK TRANSACTION
 # ==================================================
 
-print("Finding interesting transaction...")
+print(
+    "Finding interesting transaction..."
+)
 
-probabilities = model.predict_proba(
-    X_test
-)[:, 1]
+probabilities = (
+
+    model
+    .predict_proba(X_test)[:, 1]
+)
 
 
 highest_risk_position = (
@@ -379,13 +458,36 @@ highest_risk_position = (
 )
 
 
-transaction = X_test.iloc[
-    highest_risk_position
-]
+# Model-only transaction
+
+transaction = (
+    X_test
+    .iloc[highest_risk_position]
+)
+
+
+# Get original dataframe row
+
+transaction_index = (
+    X_test.index[
+        highest_risk_position
+    ]
+)
+
+
+# Full transaction information
+
+full_transaction = (
+    df.loc[
+        transaction_index
+    ].copy()
+)
 
 
 risk_probability = (
-    probabilities[highest_risk_position]
+    probabilities[
+        highest_risk_position
+    ]
 )
 
 
@@ -398,31 +500,39 @@ risk_score = (
 # 19. SHAP
 # ==================================================
 
-print("Running SHAP explanation...")
-
-# Only explain ONE transaction.
-# TreeExplainer is optimized for Random Forests.
+print(
+    "Running SHAP explanation..."
+)
 
 explainer = shap.TreeExplainer(
     model
 )
 
-shap_values = explainer.shap_values(
-    transaction.to_frame().T
+shap_values = (
+    explainer.shap_values(
+        transaction.to_frame().T
+    )
 )
 
 
 # ==================================================
-# 20. HANDLE SHAP OUTPUT
+# 20. SHAP OUTPUT
 # ==================================================
 
-if isinstance(shap_values, list):
+if isinstance(
+    shap_values,
+    list
+):
 
-    values = shap_values[1][0]
+    values = (
+        shap_values[1][0]
+    )
 
 else:
 
-    values = shap_values[0]
+    values = (
+        shap_values[0]
+    )
 
     if len(values.shape) > 1:
 
@@ -430,7 +540,7 @@ else:
 
 
 # ==================================================
-# 21. BUILD EXPLANATION
+# 21. EXPLANATION TABLE
 # ==================================================
 
 explanation = pd.DataFrame({
@@ -444,67 +554,135 @@ explanation = pd.DataFrame({
 })
 
 
-explanation["absolute_impact"] = (
-    explanation["impact"].abs()
+explanation[
+    "absolute_impact"
+] = (
+    explanation["impact"]
+    .abs()
 )
 
 
-explanation = explanation.sort_values(
-
-    "absolute_impact",
-
-    ascending=False
-
+explanation = (
+    explanation
+    .sort_values(
+        "absolute_impact",
+        ascending=False
+    )
 )
 
 
 # ==================================================
-# 22. DISPLAY
+# 22. INVESTIGATION OUTPUT
 # ==================================================
 
 print()
-print("=" * 60)
-print("        SHIELD-AI TRANSACTION INVESTIGATION")
+
 print("=" * 60)
 
 print(
-    f"\nRisk Score: {risk_score:.2f}/100"
+    "        SHIELD-AI TRANSACTION INVESTIGATION"
+)
+
+print("=" * 60)
+
+print(
+    f"\nRisk Score: "
+    f"{risk_score:.2f}/100"
 )
 
 
 if risk_score >= 70:
 
-    print("Risk Level: HIGH")
+    print(
+        "Risk Level: HIGH"
+    )
 
 elif risk_score >= 40:
 
-    print("Risk Level: MEDIUM")
+    print(
+        "Risk Level: MEDIUM"
+    )
 
 else:
 
-    print("Risk Level: LOW")
-
-
-print("\nTOP MODEL EXPLANATIONS")
-print("-" * 60)
-
-
-for _, row in explanation.head(5).iterrows():
-
-    if row["impact"] > 0:
-
-        direction = "INCREASES RISK"
-
-    else:
-
-        direction = "REDUCES RISK"
-
-
     print(
-        f"{row['feature']:<35}"
-        f"{row['value']:.2f}   "
-        f"{direction}"
+        "Risk Level: LOW"
     )
 
 
-print("\nInvestigation complete.")
+print()
+
+print(
+    "TOP MODEL EXPLANATIONS"
+)
+
+print("-" * 60)
+
+
+for _, row in (
+    explanation.head(5).iterrows()
+):
+
+    if row["impact"] > 0:
+
+        direction = (
+            "INCREASES RISK"
+        )
+
+    else:
+
+        direction = (
+            "REDUCES RISK"
+        )
+
+
+    print(
+
+        f"{row['feature']:<35}"
+
+        f"{row['value']:.2f}   "
+
+        f"{direction}"
+
+    )
+
+
+# ==================================================
+# 23. HUMAN-READABLE EXPLANATION
+# ==================================================
+
+explanations = (
+    generate_explanations(
+        full_transaction
+    )
+)
+
+print_explanations(
+    explanations
+)
+
+
+# ==================================================
+# 24. BEHAVIOR COMPARISON
+# ==================================================
+
+comparison = (
+    create_behavior_comparison(
+        full_transaction
+    )
+)
+
+print_behavior_comparison(
+    comparison
+)
+
+
+# ==================================================
+# 25. COMPLETE
+# ==================================================
+
+print()
+
+print(
+    "Investigation complete."
+)
