@@ -90,3 +90,64 @@ print("Number of transactions:", len(df))
 
 print("\nFirst 5 transactions:")
 print(df.head())
+
+# Add fraud labels
+
+FRAUD_RATE = 0.05
+
+df["is_fraud"] = 0
+df["fraud_type"] = "normal"
+
+num_fraud = int(len(df) * FRAUD_RATE)
+
+fraud_indices = random.sample(
+    list(df.index),
+    num_fraud
+)
+
+for index in fraud_indices:
+
+    fraud_type = random.choice([
+        "unusual_amount",
+        "new_device",
+        "location_anomaly",
+        "odd_hour"
+    ])
+
+    df.loc[index, "is_fraud"] = 1
+    df.loc[index, "fraud_type"] = fraud_type
+
+    # 1. Unusually large transaction
+    if fraud_type == "unusual_amount":
+        df.loc[index, "amount"] *= random.uniform(5, 10)
+
+    # 2. Transaction from a new device
+    elif fraud_type == "new_device":
+        df.loc[index, "device_id"] = (
+            f"UNKNOWN_{random.randint(10000, 99999)}"
+        )
+
+    # 3. Transaction from another country
+    elif fraud_type == "location_anomaly":
+        df.loc[index, "ip_country"] = random.choice([
+            "USA",
+            "UK",
+            "Singapore",
+            "UAE"
+        ])
+
+    # 4. Transaction at an unusual time
+    elif fraud_type == "odd_hour":
+        timestamp = df.loc[index, "timestamp"]
+
+        df.loc[index, "timestamp"] = timestamp.replace(
+            hour=random.randint(0, 4)
+        )
+
+print("\nFraud count:", df["is_fraud"].sum())
+print("\nFraud types:")
+print(df["fraud_type"].value_counts())
+
+df.to_csv("data/raw/transactions.csv", index=False)
+
+print("\nDataset saved successfully!")
