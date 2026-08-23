@@ -1,5 +1,9 @@
 from fastapi import FastAPI
 
+from backend.investigation import (
+    investigate_transaction
+)
+
 
 app = FastAPI(
     title="Shield-AI",
@@ -24,3 +28,11 @@ def health():
     return {
         "status": "healthy"
     }
+
+
+@app.get("/api/investigate/{transaction_id}")
+def investigate(transaction_id: str):
+
+    return investigate_transaction(
+        transaction_id
+    )
