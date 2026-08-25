@@ -4,6 +4,11 @@ from backend.fraud_engine import (
     investigate_with_model
 )
 
+from backend.transactions import (
+    get_recent_transactions,
+    search_transactions
+)
+
 
 app = FastAPI(
     title="Shield-AI",
@@ -15,18 +20,30 @@ app = FastAPI(
 )
 
 
+# ============================================================
+# HOME
+# ============================================================
+
 @app.get("/")
 def home():
 
     return {
-        "application": "Shield-AI",
-        "status": "online",
-        "message": (
+
+        "application":
+            "Shield-AI",
+
+        "status":
+            "online",
+
+        "message":
             "Explainable AI Fraud "
             "Investigation API"
-        )
     }
 
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
 
 @app.get("/health")
 def health():
@@ -35,6 +52,85 @@ def health():
         "status": "healthy"
     }
 
+
+# ============================================================
+# RECENT TRANSACTIONS
+# ============================================================
+
+@app.get(
+    "/api/transactions"
+)
+def recent_transactions(
+    limit: int = 20
+):
+
+    if limit < 1:
+        limit = 1
+
+    if limit > 100:
+        limit = 100
+
+    return {
+
+        "success":
+            True,
+
+        "count":
+            limit,
+
+        "transactions":
+            get_recent_transactions(
+                limit
+            )
+    }
+
+
+# ============================================================
+# SEARCH TRANSACTIONS
+# ============================================================
+
+@app.get(
+    "/api/transactions/search"
+)
+def search(
+    query: str,
+    limit: int = 20
+):
+
+    if not query.strip():
+
+        raise HTTPException(
+            status_code=400,
+            detail="Search query is required"
+        )
+
+    if limit < 1:
+        limit = 1
+
+    if limit > 100:
+        limit = 100
+
+    results = search_transactions(
+        query,
+        limit
+    )
+
+    return {
+
+        "success":
+            True,
+
+        "count":
+            len(results),
+
+        "transactions":
+            results
+    }
+
+
+# ============================================================
+# AI INVESTIGATION
+# ============================================================
 
 @app.get(
     "/api/investigate/{transaction_id}"
@@ -62,7 +158,8 @@ def investigate(
 
     return {
 
-        "success": True,
+        "success":
+            True,
 
         "transaction_id":
             transaction_id,
@@ -74,18 +171,26 @@ def investigate(
             result["risk_level"],
 
         "recommended_action":
-            result["recommended_action"],
+            result[
+                "recommended_action"
+            ],
 
         "transaction": {
 
             "amount":
-                float(transaction["amount"]),
+                float(
+                    transaction["amount"]
+                ),
 
             "customer_id":
-                transaction["customer_id"],
+                transaction[
+                    "customer_id"
+                ],
 
             "payment_method":
-                transaction["payment_method"],
+                transaction[
+                    "payment_method"
+                ],
 
             "merchant_category":
                 transaction[
@@ -98,13 +203,17 @@ def investigate(
                 ],
 
             "timestamp":
-                str(transaction[
-                    "timestamp"
-                ])
+                str(
+                    transaction[
+                        "timestamp"
+                    ]
+                )
         },
 
         "explanations":
-            result["explanations"],
+            result[
+                "explanations"
+            ],
 
         "behavior_comparison":
             result[
