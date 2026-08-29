@@ -732,18 +732,63 @@ input {
     line-height: 1.6;
 }
 
+.flag-summary,
+.comparison-summary,
+.no-data {
+    margin: 0 0 18px;
+
+    color: #9aa3b2;
+
+    font-size: 13px;
+
+    line-height: 1.65;
+}
+
+.no-data {
+    margin: 0;
+
+    padding: 12px 14px;
+
+    border: 1px dashed #2a3342;
+
+    border-radius: 10px;
+
+    background: #0a0e16;
+}
+
 
 /* COMPARISON */
 
+.comparison-head,
 .comparison-row {
     display: grid;
 
     grid-template-columns:
-        1.3fr 1fr 1fr;
+        1.5fr 1fr 1fr 0.7fr;
 
     gap: 10px;
 
-    padding: 13px 0;
+    align-items: start;
+}
+
+.comparison-head {
+    padding: 0 0 10px;
+
+    border-bottom: 1px solid #1b222d;
+
+    color: #5f6978;
+
+    font-size: 9px;
+
+    font-weight: 800;
+
+    letter-spacing: 0.08em;
+
+    text-transform: uppercase;
+}
+
+.comparison-row {
+    padding: 14px 0;
 
     border-bottom: 1px solid #1b222d;
 
@@ -752,8 +797,40 @@ input {
     font-size: 12px;
 }
 
-.comparison-row:first-child {
-    color: #5f6978;
+.comparison-row:last-child {
+    border-bottom: none;
+}
+
+.comparison-row > div:not(:first-child) {
+    color: #d9dee5;
+
+    padding-top: 2px;
+}
+
+.comparison-signal strong {
+    display: block;
+
+    color: #e8edf4;
+
+    font-size: 13px;
+}
+
+.comparison-signal p {
+    margin: 6px 0 0;
+
+    color: #788394;
+
+    font-size: 11px;
+
+    line-height: 1.55;
+}
+
+.status-pill {
+    display: inline-block;
+
+    padding: 4px 8px;
+
+    border-radius: 999px;
 
     font-size: 9px;
 
@@ -762,12 +839,22 @@ input {
     letter-spacing: 0.08em;
 }
 
-.comparison-row:last-child {
-    border-bottom: none;
+.status-pill.normal {
+    background: rgba(69, 212, 131, 0.1);
+
+    color: #58d991;
 }
 
-.comparison-row > div:not(:first-child) {
-    color: #d9dee5;
+.status-pill.watch {
+    background: rgba(255, 190, 70, 0.1);
+
+    color: #ffc65c;
+}
+
+.status-pill.anomaly {
+    background: rgba(255, 82, 82, 0.12);
+
+    color: #ff7777;
 }
 
 
@@ -852,6 +939,11 @@ input {
     .risk-grid,
     .details-grid {
         grid-template-columns: 1fr;
+    }
+
+    .comparison-head,
+    .comparison-row {
+        grid-template-columns: 1.4fr 0.9fr;
     }
 
     .transaction-info {

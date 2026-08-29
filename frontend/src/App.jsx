@@ -283,10 +283,28 @@ function InvestigationPanel({ data }) {
             : [];
 
 
+    const comparisonPayload =
+        data.behavior_comparison || {};
+
+
     const comparisons =
-        Array.isArray(data.behavior_comparison)
-            ? data.behavior_comparison
-            : [];
+        Array.isArray(comparisonPayload)
+            ? comparisonPayload
+            : Array.isArray(comparisonPayload.signals)
+                ? comparisonPayload.signals
+                : [];
+
+
+    const comparisonSummary =
+        (!Array.isArray(comparisonPayload) &&
+            comparisonPayload.summary) ||
+        "";
+
+
+    const flagSummary =
+        data.flag_summary ||
+        (explanations[0] && explanations[0].message) ||
+        "";
 
 
     return (
@@ -442,13 +460,23 @@ function InvestigationPanel({ data }) {
                     </div>
 
 
+                    {flagSummary && (
+
+                        <p className="flag-summary">
+                            {flagSummary}
+                        </p>
+
+                    )}
+
+
                     <div className="explanations">
 
                         {explanations.length === 0 && (
 
                             <p className="no-data">
-                                No explanation signals
-                                were returned.
+                                {riskLevel === "low"
+                                    ? "Nothing unusual stood out against this customer's baseline. The model is not treating this as a likely fraud case."
+                                    : "The model raised risk from a mix of weaker signals rather than one obvious red flag. Check the behaviour comparison for what still differs from baseline."}
                             </p>
 
                         )}
@@ -507,12 +535,21 @@ function InvestigationPanel({ data }) {
 
 
                             <h3>
-                                Normal vs current
+                                Customer vs this payment
                             </h3>
 
                         </div>
 
                     </div>
+
+
+                    {comparisonSummary && (
+
+                        <p className="comparison-summary">
+                            {comparisonSummary}
+                        </p>
+
+                    )}
 
 
                     <div className="comparison">
@@ -527,34 +564,68 @@ function InvestigationPanel({ data }) {
                         )}
 
 
+                        {comparisons.length > 0 && (
+
+                            <div className="comparison-head">
+                                <div>Signal</div>
+                                <div>Usual for this customer</div>
+                                <div>This payment</div>
+                                <div>Result</div>
+                            </div>
+
+                        )}
+
+
                         {comparisons.map(
-                            (item, index) => (
+                            (item, index) => {
 
-                                <div
-                                    className="comparison-row"
-                                    key={index}
-                                >
+                                const status = String(
+                                    item.status || "NORMAL"
+                                ).toLowerCase();
 
-                                    <div>
-                                        {item.signal ||
-                                            "Signal"}
+                                return (
+
+                                    <div
+                                        className={`comparison-row ${status}`}
+                                        key={index}
+                                    >
+
+                                        <div className="comparison-signal">
+                                            <strong>
+                                                {item.signal ||
+                                                    "Signal"}
+                                            </strong>
+                                            {item.insight && (
+                                                <p>
+                                                    {item.insight}
+                                                </p>
+                                            )}
+                                        </div>
+
+
+                                        <div>
+                                            {item.normal || "—"}
+                                        </div>
+
+
+                                        <div>
+                                            {item.current || "—"}
+                                        </div>
+
+
+                                        <div>
+                                            <span
+                                                className={`status-pill ${status}`}
+                                            >
+                                                {item.status ||
+                                                    "NORMAL"}
+                                            </span>
+                                        </div>
+
                                     </div>
 
-
-                                    <div>
-                                        {item.normal ||
-                                            "—"}
-                                    </div>
-
-
-                                    <div>
-                                        {item.current ||
-                                            "—"}
-                                    </div>
-
-                                </div>
-
-                            )
+                                );
+                            }
                         )}
 
                     </div>

@@ -1,7 +1,10 @@
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-from ml.explanation_engine import generate_explanations
+from ml.explanation_engine import (
+    FEATURE_LABELS,
+    generate_explanations,
+)
 from ml.behavior_comparison import create_behavior_comparison
 
 
@@ -345,6 +348,47 @@ def get_model(df):
     return model
 
 
+def _to_native(value):
+    try:
+        return value.item()
+    except AttributeError:
+        return value
+
+
+def model_risk_drivers(model, X_transaction, medians):
+    """
+    Approximate how much each feature raised the fraud
+    probability by replacing it with the training median.
+    """
+
+    baseline = float(
+        model.predict_proba(X_transaction)[0][1]
+    )
+
+    drivers = []
+
+    for feature in FEATURES:
+        altered = X_transaction.copy()
+        altered[feature] = medians[feature]
+        swapped = float(
+            model.predict_proba(altered)[0][1]
+        )
+        delta = baseline - swapped
+        drivers.append({
+            "feature": feature,
+            "label": FEATURE_LABELS.get(feature, feature),
+            "delta": round(delta, 4),
+            "raises_risk": delta > 0.005,
+        })
+
+    drivers.sort(
+        key=lambda item: abs(item["delta"]),
+        reverse=True,
+    )
+
+    return drivers
+
+
 def investigate_with_model(
     transaction_id
 ):
@@ -402,25 +446,54 @@ def investigate_with_model(
             "ALLOW"
         )
 
-    # ------------------------------------------
-    # HUMAN EXPLANATIONS
-    # ------------------------------------------
-
-    explanations = (
-        generate_explanations(
-            transaction
-        )
+    model_drivers = model_risk_drivers(
+        MODEL,
+        X_transaction,
+        FEATURE_MEDIANS,
     )
 
-    # ------------------------------------------
-    # BEHAVIOR COMPARISON
-    # ------------------------------------------
-
-    behavior_comparison = (
-        create_behavior_comparison(
-            transaction
-        )
+    explanations = generate_explanations(
+        transaction,
+        risk_score=risk_score,
+        risk_level=risk_level,
+        model_drivers=model_drivers,
     )
+
+    behavior_comparison = create_behavior_comparison(
+        transaction
+    )
+
+    if explanations:
+        hard = [
+            item for item in explanations
+            if item["severity"] in ("HIGH", "MEDIUM")
+        ]
+        lead = (hard or explanations)[0]
+        extra = max(len(hard) - 1, 0)
+        if risk_level in ("HIGH", "MEDIUM"):
+            flag_summary = lead["title"]
+            if extra:
+                flag_summary += (
+                    f" — plus {extra} other risk signal"
+                    f"{'s' if extra != 1 else ''}."
+                )
+            elif lead["feature"] == "model_combination":
+                flag_summary += (
+                    f" Model score {round(risk_score, 1)}/100."
+                )
+        else:
+            flag_summary = lead["title"]
+    elif risk_level in ("HIGH", "MEDIUM"):
+        flag_summary = (
+            f"The model scored this {risk_level} "
+            f"({round(risk_score, 1)}/100) from a mix of "
+            "weaker signals rather than one obvious anomaly."
+        )
+    else:
+        flag_summary = (
+            "Behaviour is close to this customer's baseline. "
+            "The model does not treat this as a strong fraud case."
+        )
 
     return {
 
@@ -439,11 +512,20 @@ def investigate_with_model(
         "recommended_action":
             recommended_action,
 
+        "flag_summary":
+            flag_summary,
+
         "explanations":
             explanations,
 
         "behavior_comparison":
-            behavior_comparison
+            behavior_comparison,
+
+        "model_drivers": [
+            driver
+            for driver in model_drivers[:5]
+            if abs(driver["delta"]) >= 0.005
+        ],
     }
 
 
@@ -456,6 +538,13 @@ print(
 )
 
 MODEL_DATA = prepare_data()
+
+FEATURE_MEDIANS = {
+    feature: _to_native(
+        MODEL_DATA[feature].median()
+    )
+    for feature in FEATURES
+}
 
 print(
     "Training Shield-AI fraud model..."

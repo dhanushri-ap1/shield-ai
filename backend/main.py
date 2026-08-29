@@ -175,6 +175,12 @@ def investigate(
                 "recommended_action"
             ],
 
+        "flag_summary":
+            result.get(
+                "flag_summary",
+                ""
+            ),
+
         "transaction": {
 
             "amount":
@@ -218,5 +224,11 @@ def investigate(
         "behavior_comparison":
             result[
                 "behavior_comparison"
-            ]
+            ],
+
+        "model_drivers":
+            result.get(
+                "model_drivers",
+                []
+            )
     }
