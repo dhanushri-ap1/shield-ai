@@ -1,0 +1,14 @@
+{
+  "08ba9a87-a6de-4176-b9d7-eccdc024ee42": {
+    "transaction_id": "08ba9a87-a6de-4176-b9d7-eccdc024ee42",
+    "status": "safe",
+    "notes": [],
+    "updated_at": "2026-08-29T23:01:05"
+  },
+  "074e9384-026f-4fe8-84ba-186fc2d7628a": {
+    "transaction_id": "074e9384-026f-4fe8-84ba-186fc2d7628a",
+    "status": "confirmed_fraud",
+    "notes": [],
+    "updated_at": "2026-08-29T23:03:01"
+  }
+}

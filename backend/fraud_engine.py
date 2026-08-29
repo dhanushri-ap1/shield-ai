@@ -348,6 +348,201 @@ def get_model(df):
     return model
 
 
+def _to_native(value):
+    try:
+        return value.item()
+    except AttributeError:
+        return value
+
+
+def model_risk_drivers(model, X_transaction, medians):
+    """
+    Approximate how much each feature raised the fraud
+    probability by replacing it with the training median.
+    """
+
+    baseline = float(
+        model.predict_proba(X_transaction)[0][1]
+    )
+
+    drivers = []
+
+    for feature in FEATURES:
+        altered = X_transaction.copy()
+        altered[feature] = medians[feature]
+        swapped = float(
+            model.predict_proba(altered)[0][1]
+        )
+        delta = baseline - swapped
+        drivers.append({
+            "feature": feature,
+            "label": FEATURE_LABELS.get(feature, feature),
+            "delta": round(delta, 4),
+            "raises_risk": delta > 0.005,
+        })
+
+    drivers.sort(
+        key=lambda item: abs(item["delta"]),
+        reverse=True,
+    )
+
+    return drivers
+
+
+def build_score_breakdown(model_drivers, risk_score):
+    """
+    Turn raw model-driver probability deltas into investigator-facing
+    "contributing signal" points that roughly add up to the risk score,
+    e.g. New Device +30, Unusual Time +25, New Location +15.
+    """
+
+    positive = [
+        driver for driver in model_drivers
+        if driver.get("raises_risk") and driver.get("delta", 0) > 0
+    ]
+
+    if not positive:
+        return []
+
+    total_delta = sum(driver["delta"] for driver in positive)
+
+    breakdown = []
+
+    for driver in positive[:5]:
+
+        share = driver["delta"] / total_delta if total_delta else 0
+
+        points = round(share * risk_score)
+
+        if points <= 0:
+            continue
+
+        if points >= 20:
+            weight = "HIGH"
+        elif points >= 10:
+            weight = "MEDIUM"
+        else:
+            weight = "LOW"
+
+        breakdown.append({
+            "label": driver["label"],
+            "points": int(points),
+            "weight": weight,
+        })
+
+    return breakdown
+
+
+PRIMARY_REASON_RULES = [
+    ("is_new_device", "New Device"),
+    ("is_new_location", "Unusual Location"),
+    ("is_odd_hour", "Odd Hour Activity"),
+    ("transactions_last_10min_high", "Velocity Burst"),
+    ("failed_attempts_before_success", "Failed Attempts"),
+    ("amount_ratio_high", "High Amount"),
+    ("is_new_payment_method", "New Payment Method"),
+    ("is_new_category", "New Merchant Category"),
+    ("device_account_count_high", "Shared Device"),
+    ("account_age_low", "New Account"),
+]
+
+
+def primary_reason_for_row(row):
+    """
+    Cheap, rule-based "why this is in the queue" label — used for the
+    priority queue where we don't want to run the full model-driver
+    explanation for every row.
+    """
+
+    if _to_native(row.get("is_new_device", 0)) == 1:
+        return "New Device"
+
+    if _to_native(row.get("is_new_location", 0)) == 1:
+        return "Unusual Location"
+
+    if _to_native(row.get("is_odd_hour", 0)) == 1:
+        return "Odd Hour Activity"
+
+    if _to_native(row.get("time_deviation", 0)) >= 6:
+        return "Time Deviation"
+
+    if _to_native(row.get("transactions_last_10min", 0)) >= 3:
+        return "Velocity Burst"
+
+    if _to_native(row.get("failed_attempts_before_success", 0)) >= 1:
+        return "Failed Attempts"
+
+    if _to_native(row.get("amount_ratio", 1)) >= 1.8:
+        return "High Amount"
+
+    if _to_native(row.get("is_new_payment_method", 0)) == 1:
+        return "New Payment Method"
+
+    if _to_native(row.get("is_new_category", 0)) == 1:
+        return "New Merchant Category"
+
+    if _to_native(row.get("device_account_count", 1)) >= 3:
+        return "Shared Device"
+
+    if _to_native(row.get("account_age_days", 999)) <= 30:
+        return "New Account"
+
+    return "Behaviour Pattern"
+
+
+def get_priority_queue(limit=30):
+    """
+    Rank transactions the way an investigator's queue would: worst risk
+    first, with a short human-readable reason and a relative timestamp.
+    """
+
+    import datetime
+
+    df = MODEL_DATA[
+        MODEL_DATA["risk_level"].isin(["HIGH", "MEDIUM"])
+    ].copy()
+
+    if df.empty:
+        df = MODEL_DATA.copy()
+
+    df = df.sort_values("risk_score", ascending=False).head(limit)
+
+    now = datetime.datetime.now()
+
+    items = []
+
+    for _, row in df.iterrows():
+
+        timestamp = row["timestamp"]
+
+        delta = now - timestamp.to_pydatetime().replace(tzinfo=None)
+        minutes = int(delta.total_seconds() // 60)
+
+        if minutes < 1:
+            time_ago = "just now"
+        elif minutes < 60:
+            time_ago = f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+        elif minutes < 60 * 24:
+            hours = minutes // 60
+            time_ago = f"{hours} hour{'s' if hours != 1 else ''} ago"
+        else:
+            days = minutes // (60 * 24)
+            time_ago = f"{days} day{'s' if days != 1 else ''} ago"
+
+        items.append({
+            "transaction_id": row["transaction_id"],
+            "customer_id": row["customer_id"],
+            "amount": float(row["amount"]),
+            "risk_score": round(float(row["risk_score"]), 1),
+            "risk_level": row["risk_level"],
+            "reason": primary_reason_for_row(row),
+            "timestamp": str(timestamp),
+            "time_ago": time_ago,
+        })
+
+    return items
+
+
 def investigate_with_model(
     transaction_id
 ):
@@ -422,6 +617,11 @@ def investigate_with_model(
         transaction
     )
 
+    score_breakdown = build_score_breakdown(
+        model_drivers,
+        risk_score,
+    )
+
     if explanations:
         hard = [
             item for item in explanations
@@ -480,6 +680,9 @@ def investigate_with_model(
         "behavior_comparison":
             behavior_comparison,
 
+        "score_breakdown":
+            score_breakdown,
+
         "model_drivers": [
             driver
             for driver in model_drivers[:5]
@@ -514,12 +717,20 @@ MODEL = get_model(
 )
 
 print(
-    "Scoring transaction risk queue..."
+    "Scoring transaction history..."
 )
 
-MODEL_DATA = attach_risk_scores(
-    MODEL_DATA,
-    MODEL
+_ALL_PROBABILITIES = MODEL.predict_proba(
+    MODEL_DATA[FEATURES]
+)[:, 1]
+
+MODEL_DATA["risk_score"] = _ALL_PROBABILITIES * 100
+
+MODEL_DATA["risk_level"] = MODEL_DATA["risk_score"].apply(
+    lambda score:
+        "HIGH" if score >= 70 else
+        "MEDIUM" if score >= 40 else
+        "LOW"
 )
 
 print(

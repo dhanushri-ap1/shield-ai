@@ -1,40 +1,66 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from backend.fraud_engine import investigate_with_model
-from backend.operations import (
-    analytics_risk,
-    dashboard_summary,
-    get_transaction,
-    list_transactions
+from backend.fraud_engine import (
+    investigate_with_model,
+    get_priority_queue,
 )
+
+from backend.transactions import (
+    get_recent_transactions,
+    search_transactions
+)
+
+from backend.customer_profile import (
+    get_customer_profile,
+    get_customer_timeline,
+)
+
+from backend import case_store
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+class NoteCreate(BaseModel):
+    note: str
 
 
 app = FastAPI(
-    title="SHIELD-AI",
+    title="Shield-AI",
     description=(
-        "Fraud & Risk Intelligence Platform"
+        "Explainable AI Fraud "
+        "Investigation API"
     ),
-    version="2.0.0"
+    version="1.0.0"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
 
+# ============================================================
+# HOME
+# ============================================================
 
 @app.get("/")
 def home():
 
     return {
-        "application": "SHIELD-AI",
-        "status": "online",
-        "message": "Fraud & Risk Intelligence Platform"
+
+        "application":
+            "Shield-AI",
+
+        "status":
+            "online",
+
+        "message":
+            "Explainable AI Fraud "
+            "Investigation API"
     }
 
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
 
 @app.get("/health")
 def health():
@@ -44,30 +70,15 @@ def health():
     }
 
 
-@app.get("/api/dashboard/summary")
-def dashboard():
+# ============================================================
+# RECENT TRANSACTIONS
+# ============================================================
 
-    return {
-        "success": True,
-        **dashboard_summary()
-    }
-
-
-@app.get("/api/analytics/risk")
-def analytics():
-
-    return {
-        "success": True,
-        **analytics_risk()
-    }
-
-
-@app.get("/api/transactions")
-def transactions(
-    query: str = "",
-    risk: str = "ALL",
-    limit: int = 25,
-    offset: int = 0
+@app.get(
+    "/api/transactions"
+)
+def recent_transactions(
+    limit: int = 20
 ):
 
     if limit < 1:
@@ -76,23 +87,28 @@ def transactions(
     if limit > 100:
         limit = 100
 
-    if offset < 0:
-        offset = 0
-
-    result = list_transactions(
-        query=query,
-        risk=risk,
-        limit=limit,
-        offset=offset
-    )
-
     return {
-        "success": True,
-        **result
+
+        "success":
+            True,
+
+        "count":
+            limit,
+
+        "transactions":
+            get_recent_transactions(
+                limit
+            )
     }
 
 
-@app.get("/api/transactions/search")
+# ============================================================
+# SEARCH TRANSACTIONS
+# ============================================================
+
+@app.get(
+    "/api/transactions/search"
+)
 def search(
     query: str,
     limit: int = 20
@@ -105,24 +121,46 @@ def search(
             detail="Search query is required"
         )
 
-    result = list_transactions(
-        query=query,
-        risk="ALL",
-        limit=limit,
-        offset=0
+    if limit < 1:
+        limit = 1
+
+    if limit > 100:
+        limit = 100
+
+    results = search_transactions(
+        query,
+        limit
     )
 
     return {
-        "success": True,
-        "count": result["count"],
-        "transactions": result["transactions"]
+
+        "success":
+            True,
+
+        "count":
+            len(results),
+
+        "transactions":
+            results
     }
 
 
-@app.get("/api/transactions/{transaction_id}")
-def transaction_detail(transaction_id: str):
+# ============================================================
+# AI INVESTIGATION
+# ============================================================
 
-    result = get_transaction(transaction_id)
+@app.get(
+    "/api/investigate/{transaction_id}"
+)
+def investigate(
+    transaction_id: str
+):
+
+    result = (
+        investigate_with_model(
+            transaction_id
+        )
+    )
 
     if result is None:
 
@@ -131,37 +169,32 @@ def transaction_detail(transaction_id: str):
             detail="Transaction not found"
         )
 
-    return {
-        "success": True,
-        "transaction": result
-    }
+    transaction = (
+        result["transaction"]
+    )
 
-
-@app.get("/api/investigate/{transaction_id}")
-def investigate(transaction_id: str):
-
-    result = investigate_with_model(transaction_id)
-
-    if result is None:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Transaction not found"
-        )
-
-    transaction = result["transaction"]
+    case = case_store.get_case(
+        transaction_id
+    )
 
     return {
 
-        "success": True,
+        "success":
+            True,
 
-        "transaction_id": transaction_id,
+        "transaction_id":
+            transaction_id,
 
-        "risk_score": result["risk_score"],
+        "risk_score":
+            result["risk_score"],
 
-        "risk_level": result["risk_level"],
+        "risk_level":
+            result["risk_level"],
 
-        "recommended_action": result["recommended_action"],
+        "recommended_action":
+            result[
+                "recommended_action"
+            ],
 
         "flag_summary":
             result.get(
@@ -171,25 +204,208 @@ def investigate(transaction_id: str):
 
         "transaction": {
 
-            "amount": float(transaction["amount"]),
+            "amount":
+                float(
+                    transaction["amount"]
+                ),
 
-            "customer_id": transaction["customer_id"],
+            "customer_id":
+                transaction[
+                    "customer_id"
+                ],
 
-            "payment_method": transaction["payment_method"],
+            "payment_method":
+                transaction[
+                    "payment_method"
+                ],
 
-            "merchant_category": transaction["merchant_category"],
+            "merchant_category":
+                transaction[
+                    "merchant_category"
+                ],
 
-            "country": transaction["ip_country"],
+            "country":
+                transaction[
+                    "ip_country"
+                ],
 
-            "timestamp": str(transaction["timestamp"]),
-
-            "device_id": str(transaction.get("device_id", ""))
+            "timestamp":
+                str(
+                    transaction[
+                        "timestamp"
+                    ]
+                )
         },
 
-        "explanations": result["explanations"],
+        "explanations":
+            result[
+                "explanations"
+            ],
 
         "behavior_comparison":
             result[
                 "behavior_comparison"
-            ]
+            ],
+
+        "score_breakdown":
+            result.get(
+                "score_breakdown",
+                []
+            ),
+
+        "model_drivers":
+            result.get(
+                "model_drivers",
+                []
+            ),
+
+        "case":
+            case,
+    }
+
+
+# ============================================================
+# INVESTIGATOR ACTIONS — status + notes
+# ============================================================
+
+@app.get(
+    "/api/cases/{transaction_id}"
+)
+def get_case(transaction_id: str):
+
+    return {
+        "success": True,
+        "case": case_store.get_case(transaction_id),
+    }
+
+
+@app.post(
+    "/api/cases/{transaction_id}/status"
+)
+def update_case_status(
+    transaction_id: str,
+    payload: StatusUpdate,
+):
+
+    try:
+        case = case_store.set_status(
+            transaction_id,
+            payload.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+    return {
+        "success": True,
+        "case": case,
+    }
+
+
+@app.post(
+    "/api/cases/{transaction_id}/notes"
+)
+def add_case_note(
+    transaction_id: str,
+    payload: NoteCreate,
+):
+
+    try:
+        case = case_store.add_note(
+            transaction_id,
+            payload.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+    return {
+        "success": True,
+        "case": case,
+    }
+
+
+# ============================================================
+# PRIORITY QUEUE
+# ============================================================
+
+@app.get(
+    "/api/queue"
+)
+def priority_queue(limit: int = 30):
+
+    if limit < 1:
+        limit = 1
+
+    if limit > 100:
+        limit = 100
+
+    items = get_priority_queue(limit)
+
+    cases = case_store.all_cases()
+
+    for item in items:
+        case = cases.get(
+            item["transaction_id"],
+            {"status": "unreviewed"},
+        )
+        item["case_status"] = case["status"]
+
+    return {
+        "success": True,
+        "count": len(items),
+        "queue": items,
+    }
+
+
+# ============================================================
+# CUSTOMER RISK PROFILE + TIMELINE
+# ============================================================
+
+@app.get(
+    "/api/customers/{customer_id}/profile"
+)
+def customer_profile(customer_id: str):
+
+    profile = get_customer_profile(customer_id)
+
+    if profile is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Customer not found",
+        )
+
+    return {
+        "success": True,
+        "profile": profile,
+    }
+
+
+@app.get(
+    "/api/customers/{customer_id}/timeline"
+)
+def customer_timeline(
+    customer_id: str,
+    limit: int = 15,
+):
+
+    if limit < 1:
+        limit = 1
+
+    if limit > 50:
+        limit = 50
+
+    timeline = get_customer_timeline(
+        customer_id,
+        limit,
+    )
+
+    return {
+        "success": True,
+        "count": len(timeline),
+        "timeline": timeline,
     }

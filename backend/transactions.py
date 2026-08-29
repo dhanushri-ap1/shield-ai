@@ -1,128 +1,89 @@
-import pandas as pd
+from backend.fraud_engine import MODEL_DATA
+from backend import case_store
 
 
-DATA_PATH = "data/raw/transactions.csv"
+def _status_label(risk_level):
+    if risk_level == "HIGH":
+        return "Suspicious"
+    if risk_level == "MEDIUM":
+        return "Needs Review"
+    return "Normal"
 
 
-def load_transactions():
+def _row_to_dict(row, cases):
 
-    return pd.read_csv(
-        DATA_PATH
-    )
+    risk_level = row["risk_level"]
+    case = cases.get(row["transaction_id"], {"status": "unreviewed"})
 
+    return {
+        "transaction_id":
+            row["transaction_id"],
 
-def get_recent_transactions(
-    limit=20
-):
+        "customer_id":
+            row["customer_id"],
 
-    df = load_transactions()
+        "amount":
+            float(row["amount"]),
 
-    df["timestamp"] = pd.to_datetime(
-        df["timestamp"]
-    )
+        "payment_method":
+            row["payment_method"],
 
-    df = df.sort_values(
-        "timestamp",
-        ascending=False
-    )
+        "merchant_category":
+            row["merchant_category"],
 
-    transactions = []
+        "country":
+            row["ip_country"],
 
-    for _, row in df.head(limit).iterrows():
+        "timestamp":
+            str(row["timestamp"]),
 
-        transactions.append({
+        "risk_score":
+            round(float(row["risk_score"]), 1),
 
-            "transaction_id":
-                row["transaction_id"],
+        "risk_level":
+            risk_level,
 
-            "customer_id":
-                row["customer_id"],
+        "status_label":
+            _status_label(risk_level),
 
-            "amount":
-                float(row["amount"]),
-
-            "payment_method":
-                row["payment_method"],
-
-            "merchant_category":
-                row["merchant_category"],
-
-            "country":
-                row["ip_country"],
-
-            "timestamp":
-                str(row["timestamp"]),
-
-            "fraud_type":
-                row["fraud_type"],
-
-            "is_fraud":
-                int(row["is_fraud"])
-        })
-
-    return transactions
+        "case_status":
+            case["status"],
+    }
 
 
-def search_transactions(
-    query,
-    limit=20
-):
+def get_recent_transactions(limit=20):
 
-    df = load_transactions()
+    df = MODEL_DATA.sort_values(
+        "timestamp", ascending=False
+    ).head(limit)
+
+    cases = case_store.all_cases()
+
+    return [_row_to_dict(row, cases) for _, row in df.iterrows()]
+
+
+def search_transactions(query, limit=20):
 
     query = str(query).lower()
 
     mask = (
-
-        df["transaction_id"]
+        MODEL_DATA["transaction_id"]
         .astype(str)
         .str.lower()
         .str.contains(query)
 
         |
 
-        df["customer_id"]
+        MODEL_DATA["customer_id"]
         .astype(str)
         .str.lower()
         .str.contains(query)
     )
 
-    results = df[mask].head(
-        limit
-    )
+    results = MODEL_DATA[mask].sort_values(
+        "timestamp", ascending=False
+    ).head(limit)
 
-    transactions = []
+    cases = case_store.all_cases()
 
-    for _, row in results.iterrows():
-
-        transactions.append({
-
-            "transaction_id":
-                row["transaction_id"],
-
-            "customer_id":
-                row["customer_id"],
-
-            "amount":
-                float(row["amount"]),
-
-            "payment_method":
-                row["payment_method"],
-
-            "merchant_category":
-                row["merchant_category"],
-
-            "country":
-                row["ip_country"],
-
-            "timestamp":
-                str(row["timestamp"]),
-
-            "fraud_type":
-                row["fraud_type"],
-
-            "is_fraud":
-                int(row["is_fraud"])
-        })
-
-    return transactions
+    return [_row_to_dict(row, cases) for _, row in results.iterrows()]
