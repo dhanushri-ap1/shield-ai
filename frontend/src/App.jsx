@@ -1,18 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
 
 function App() {
 
+    const [section, setSection] = useState("overview");
     const [transactionId, setTransactionId] = useState("");
     const [investigation, setInvestigation] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
 
-    async function investigate() {
+    function openInvestigation(id) {
 
-        if (!transactionId.trim()) {
+        setTransactionId(id);
+        setSection("investigate");
+        investigate(id);
+    }
+
+
+    async function investigate(id) {
+
+        const lookup = (id || transactionId).trim();
+
+        if (!lookup) {
             setError("Enter a transaction ID.");
             return;
         }
@@ -24,9 +35,8 @@ function App() {
         try {
 
             const response = await fetch(
-                `/api/investigate/${transactionId.trim()}`
+                `/api/investigate/${lookup}`
             );
-
 
             if (!response.ok) {
 
@@ -46,16 +56,11 @@ function App() {
                 throw new Error(message);
             }
 
-
             const data = await response.json();
-
-            console.log("Investigation response:", data);
 
             setInvestigation(data);
 
         } catch (err) {
-
-            console.error("Investigation error:", err);
 
             setError(
                 err.message ||
@@ -65,7 +70,6 @@ function App() {
         } finally {
 
             setLoading(false);
-
         }
     }
 
@@ -89,168 +93,118 @@ function App() {
                         </h1>
 
                         <span>
-                            Explainable Fraud Intelligence
+                            Fraud & Risk Intelligence
                         </span>
 
                     </div>
 
                 </div>
 
-
                 <div className="system-status">
 
                     <span className="status-dot"></span>
 
-                    SYSTEM ONLINE
+                    SYSTEM OPERATIONAL
 
                 </div>
 
             </header>
 
 
-            <main className="main">
+            <div className="shell">
 
-                <section className="hero">
+                <nav className="sidebar">
 
-                    <p className="eyebrow">
-                        AI FRAUD INVESTIGATION CONSOLE
+                    <p className="nav-label">
+                        OPERATIONS
                     </p>
 
+                    <NavButton
+                        id="overview"
+                        label="Overview"
+                        current={section}
+                        onSelect={setSection}
+                    />
 
-                    <h2>
-                        Investigate suspicious
-                        <br />
-                        transactions.
-                    </h2>
+                    <NavButton
+                        id="transactions"
+                        label="Transactions"
+                        current={section}
+                        onSelect={setSection}
+                    />
+
+                    <NavButton
+                        id="investigate"
+                        label="Investigate"
+                        current={section}
+                        onSelect={setSection}
+                    />
+
+                    <NavButton
+                        id="analytics"
+                        label="Analytics"
+                        current={section}
+                        onSelect={setSection}
+                    />
+
+                    <NavButton
+                        id="settings"
+                        label="Settings"
+                        current={section}
+                        onSelect={setSection}
+                    />
+
+                </nav>
 
 
-                    <p className="hero-text">
+                <main className="workspace">
 
-                        Understand exactly why a transaction
-                        was flagged — with AI-backed evidence,
-                        behavioral analysis and recommended
-                        action.
+                    {section === "overview" && (
 
-                    </p>
-
-                </section>
-
-
-                <section className="search-card">
-
-                    <p className="search-label">
-                        TRANSACTION INVESTIGATION
-                    </p>
-
-
-                    <div className="search-row">
-
-                        <input
-                            value={transactionId}
-                            onChange={(event) =>
-                                setTransactionId(
-                                    event.target.value
-                                )
-                            }
-                            onKeyDown={(event) => {
-
-                                if (
-                                    event.key === "Enter"
-                                ) {
-                                    investigate();
-                                }
-
-                            }}
-                            placeholder="Enter transaction ID..."
+                        <OverviewPage
+                            onOpen={openInvestigation}
                         />
-
-
-                        <button
-                            onClick={investigate}
-                            disabled={loading}
-                        >
-
-                            {loading
-                                ? "Analyzing..."
-                                : "Investigate"}
-
-                        </button>
-
-                    </div>
-
-
-                    {error && (
-
-                        <p className="error">
-                            {error}
-                        </p>
 
                     )}
 
-                </section>
+
+                    {section === "transactions" && (
+
+                        <TransactionsPage
+                            onOpen={openInvestigation}
+                        />
+
+                    )}
 
 
-                {!investigation && !loading && (
+                    {section === "investigate" && (
 
-                    <section className="empty-state">
+                        <InvestigatePage
+                            transactionId={transactionId}
+                            setTransactionId={setTransactionId}
+                            investigation={investigation}
+                            loading={loading}
+                            error={error}
+                            onInvestigate={() =>
+                                investigate()
+                            }
+                        />
 
-                        <div className="empty-icon">
-                            ◈
-                        </div>
-
-
-                        <h3>
-                            Ready for investigation
-                        </h3>
-
-
-                        <p>
-
-                            Enter a transaction ID above
-                            to begin an AI-powered fraud
-                            investigation.
-
-                        </p>
-
-                    </section>
-
-                )}
+                    )}
 
 
-                {loading && (
-
-                    <section className="loading-state">
-
-                        <div className="loader"></div>
+                    {section === "analytics" && (
+                        <AnalyticsPage />
+                    )}
 
 
-                        <h3>
-                            AI investigation in progress
-                        </h3>
+                    {section === "settings" && (
+                        <SettingsPage />
+                    )}
 
+                </main>
 
-                        <p>
-
-                            Analyzing transaction behavior,
-                            risk signals and historical
-                            patterns...
-
-                        </p>
-
-                    </section>
-
-                )}
-
-
-                {investigation && (
-
-                    <InvestigationPanel
-                        data={investigation}
-                    />
-
-                )}
-
-            </main>
+            </div>
 
         </div>
 
@@ -258,35 +212,711 @@ function App() {
 }
 
 
+function NavButton({ id, label, current, onSelect }) {
+
+    return (
+
+        <button
+            className={
+                current === id
+                    ? "nav-btn active"
+                    : "nav-btn"
+            }
+            onClick={() => onSelect(id)}
+        >
+            {label}
+        </button>
+
+    );
+}
+
+
+function OverviewPage({ onOpen }) {
+
+    const [summary, setSummary] = useState(null);
+    const [error, setError] = useState("");
+
+
+    useEffect(() => {
+
+        fetch("/api/dashboard/summary")
+            .then(async (response) => {
+
+                if (!response.ok) {
+                    throw new Error("Dashboard failed to load.");
+                }
+
+                return response.json();
+            })
+            .then(setSummary)
+            .catch((err) =>
+                setError(err.message)
+            );
+
+    }, []);
+
+
+    if (error) {
+        return <p className="error">{error}</p>;
+    }
+
+
+    if (!summary) {
+        return <LoadingState text="Loading risk overview..." />;
+    }
+
+
+    const dist = summary.risk_distribution || {};
+
+
+    return (
+
+        <section>
+
+            <p className="eyebrow">
+                TODAY'S RISK OVERVIEW
+            </p>
+
+            <h2 className="page-title">
+                Risk operations
+            </h2>
+
+
+            <div className="stat-grid">
+
+                <StatCard
+                    label="Total"
+                    value={formatNumber(
+                        summary.total_transactions
+                    )}
+                />
+
+                <StatCard
+                    label="Flagged"
+                    value={formatNumber(
+                        summary.flagged_transactions
+                    )}
+                />
+
+                <StatCard
+                    label="High risk"
+                    value={formatNumber(
+                        summary.high_risk
+                    )}
+                    tone="high"
+                />
+
+                <StatCard
+                    label="Under review"
+                    value={formatNumber(
+                        summary.under_review
+                    )}
+                />
+
+                <StatCard
+                    label="False positive rate"
+                    value={`${summary.false_positive_rate}%`}
+                />
+
+            </div>
+
+
+            <div className="panel">
+
+                <p className="section-label">
+                    RISK DISTRIBUTION
+                </p>
+
+                <div className="distribution">
+
+                    <DistributionBar
+                        label="LOW"
+                        value={dist.LOW}
+                        tone="low"
+                    />
+
+                    <DistributionBar
+                        label="MEDIUM"
+                        value={dist.MEDIUM}
+                        tone="medium"
+                    />
+
+                    <DistributionBar
+                        label="HIGH"
+                        value={dist.HIGH}
+                        tone="high"
+                    />
+
+                </div>
+
+            </div>
+
+
+            <div className="panel">
+
+                <p className="section-label">
+                    TRANSACTION QUEUE
+                </p>
+
+                <TransactionTable
+                    rows={summary.recent_suspicious || []}
+                    onOpen={onOpen}
+                />
+
+            </div>
+
+        </section>
+
+    );
+}
+
+
+function TransactionsPage({ onOpen }) {
+
+    const [query, setQuery] = useState("");
+    const [risk, setRisk] = useState("ALL");
+    const [offset, setOffset] = useState(0);
+    const [data, setData] = useState(null);
+    const [error, setError] = useState("");
+    const [loading, setLoading] = useState(true);
+
+    const limit = 25;
+
+
+    useEffect(() => {
+
+        const params = new URLSearchParams({
+            query,
+            risk,
+            limit: String(limit),
+            offset: String(offset)
+        });
+
+        setLoading(true);
+
+        fetch(`/api/transactions?${params}`)
+            .then(async (response) => {
+
+                if (!response.ok) {
+                    throw new Error("Unable to load transactions.");
+                }
+
+                return response.json();
+            })
+            .then(setData)
+            .catch((err) => setError(err.message))
+            .finally(() => setLoading(false));
+
+    }, [query, risk, offset]);
+
+
+    return (
+
+        <section>
+
+            <p className="eyebrow">
+                TRANSACTIONS
+            </p>
+
+            <h2 className="page-title">
+                Live transaction queue
+            </h2>
+
+
+            <div className="toolbar">
+
+                <input
+                    value={query}
+                    onChange={(event) => {
+                        setOffset(0);
+                        setQuery(event.target.value);
+                    }}
+                    placeholder="Search transaction or customer..."
+                />
+
+                {["ALL", "HIGH", "MEDIUM", "LOW"].map((level) => (
+
+                    <button
+                        key={level}
+                        className={
+                            risk === level
+                                ? "filter-btn active"
+                                : "filter-btn"
+                        }
+                        onClick={() => {
+                            setOffset(0);
+                            setRisk(level);
+                        }}
+                    >
+                        {level === "ALL" ? "All" : level}
+                    </button>
+
+                ))}
+
+            </div>
+
+
+            {error && <p className="error">{error}</p>}
+
+
+            {loading && !data && (
+                <LoadingState text="Loading transactions..." />
+            )}
+
+
+            {data && (
+
+                <>
+
+                    <p className="result-count">
+
+                        {formatNumber(data.total)} transactions
+
+                    </p>
+
+                    <TransactionTable
+                        rows={data.transactions || []}
+                        onOpen={onOpen}
+                    />
+
+                    <div className="pager">
+
+                        <button
+                            disabled={offset === 0}
+                            onClick={() =>
+                                setOffset(
+                                    Math.max(0, offset - limit)
+                                )
+                            }
+                        >
+                            Previous
+                        </button>
+
+                        <span>
+
+                            {offset + 1}
+                            –
+                            {Math.min(
+                                offset + limit,
+                                data.total
+                            )}
+
+                        </span>
+
+                        <button
+                            disabled={
+                                offset + limit >= data.total
+                            }
+                            onClick={() =>
+                                setOffset(offset + limit)
+                            }
+                        >
+                            Next
+                        </button>
+
+                    </div>
+
+                </>
+
+            )}
+
+        </section>
+
+    );
+}
+
+
+function InvestigatePage({
+    transactionId,
+    setTransactionId,
+    investigation,
+    loading,
+    error,
+    onInvestigate
+}) {
+
+    return (
+
+        <section>
+
+            <p className="eyebrow">
+                TRANSACTION INVESTIGATION
+            </p>
+
+            <h2 className="page-title">
+                AI investigation workspace
+            </h2>
+
+
+            <div className="search-card">
+
+                <p className="search-label">
+                    LOOK UP A TRANSACTION
+                </p>
+
+                <div className="search-row">
+
+                    <input
+                        value={transactionId}
+                        onChange={(event) =>
+                            setTransactionId(
+                                event.target.value
+                            )
+                        }
+                        onKeyDown={(event) => {
+
+                            if (event.key === "Enter") {
+                                onInvestigate();
+                            }
+
+                        }}
+                        placeholder="Enter transaction ID..."
+                    />
+
+                    <button
+                        onClick={onInvestigate}
+                        disabled={loading}
+                    >
+
+                        {loading
+                            ? "Analyzing..."
+                            : "Investigate"}
+
+                    </button>
+
+                </div>
+
+                {error && (
+                    <p className="error">
+                        {error}
+                    </p>
+                )}
+
+            </div>
+
+
+            {!investigation && !loading && (
+
+                <div className="empty-state">
+
+                    <div className="empty-icon">
+                        ◈
+                    </div>
+
+                    <h3>
+                        Select a transaction
+                    </h3>
+
+                    <p>
+
+                        Open a row from Transactions, or enter
+                        an ID to generate human-readable
+                        risk reasoning.
+
+                    </p>
+
+                </div>
+
+            )}
+
+
+            {loading && (
+                <LoadingState text="Analyzing transaction behavior, risk signals and historical patterns..." />
+            )}
+
+
+            {investigation && (
+                <InvestigationPanel data={investigation} />
+            )}
+
+        </section>
+
+    );
+}
+
+
+function AnalyticsPage() {
+
+    const [data, setData] = useState(null);
+    const [error, setError] = useState("");
+
+
+    useEffect(() => {
+
+        fetch("/api/analytics/risk")
+            .then(async (response) => {
+
+                if (!response.ok) {
+                    throw new Error("Analytics failed to load.");
+                }
+
+                return response.json();
+            })
+            .then(setData)
+            .catch((err) => setError(err.message));
+
+    }, []);
+
+
+    if (error) {
+        return <p className="error">{error}</p>;
+    }
+
+
+    if (!data) {
+        return <LoadingState text="Loading analytics..." />;
+    }
+
+
+    const total = data.total_transactions || 1;
+
+
+    return (
+
+        <section>
+
+            <p className="eyebrow">
+                ANALYTICS
+            </p>
+
+            <h2 className="page-title">
+                Risk trends
+            </h2>
+
+
+            <div className="panel">
+
+                <p className="section-label">
+                    RISK COUNTS
+                </p>
+
+                {["HIGH", "MEDIUM", "LOW"].map((level) => (
+
+                    <DistributionBar
+                        key={level}
+                        label={level}
+                        value={
+                            Math.round(
+                                (data.counts?.[level] || 0)
+                                / total
+                                * 1000
+                            ) / 10
+                        }
+                        tone={level.toLowerCase()}
+                    />
+
+                ))}
+
+            </div>
+
+
+            <div className="details-grid">
+
+                <div className="panel">
+
+                    <p className="section-label">
+                        FLAGGED REASONS
+                    </p>
+
+                    {(data.flagged_reasons || []).map((item) => (
+
+                        <div
+                            className="metric-row"
+                            key={item.reason}
+                        >
+
+                            <span>{item.reason}</span>
+
+                            <strong>
+                                {formatNumber(item.count)}
+                            </strong>
+
+                        </div>
+
+                    ))}
+
+                </div>
+
+
+                <div className="panel">
+
+                    <p className="section-label">
+                        AVERAGE RISK BY CATEGORY
+                    </p>
+
+                    {(data.categories || []).map((item) => (
+
+                        <div
+                            className="metric-row"
+                            key={item.category}
+                        >
+
+                            <span>{item.category}</span>
+
+                            <strong>
+                                {item.avg_risk}
+                            </strong>
+
+                        </div>
+
+                    ))}
+
+                </div>
+
+            </div>
+
+        </section>
+
+    );
+}
+
+
+function SettingsPage() {
+
+    return (
+
+        <section>
+
+            <p className="eyebrow">
+                SETTINGS
+            </p>
+
+            <h2 className="page-title">
+                Platform configuration
+            </h2>
+
+
+            <div className="panel">
+
+                <div className="metric-row">
+                    <span>Dataset</span>
+                    <strong>data/raw/transactions.csv</strong>
+                </div>
+
+                <div className="metric-row">
+                    <span>Model</span>
+                    <strong>Random Forest risk engine</strong>
+                </div>
+
+                <div className="metric-row">
+                    <span>Explanations</span>
+                    <strong>Human-readable signal layer</strong>
+                </div>
+
+                <div className="metric-row">
+                    <span>Investigate API</span>
+                    <strong>/api/investigate/{"{id}"}</strong>
+                </div>
+
+            </div>
+
+        </section>
+
+    );
+}
+
+
+function TransactionTable({ rows, onOpen }) {
+
+    return (
+
+        <div className="table-wrap">
+
+            <table className="tx-table">
+
+                <thead>
+
+                    <tr>
+                        <th>Transaction</th>
+                        <th>Amount</th>
+                        <th>Customer</th>
+                        <th>Risk</th>
+                        <th>Status</th>
+                        <th>Reason</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {rows.length === 0 && (
+
+                        <tr>
+                            <td colSpan={6}>
+                                No transactions in this view.
+                            </td>
+                        </tr>
+
+                    )}
+
+                    {rows.map((row) => (
+
+                        <tr
+                            key={row.transaction_id}
+                            onClick={() =>
+                                onOpen(row.transaction_id)
+                            }
+                        >
+
+                            <td>
+                                <code>
+                                    {shortId(row.transaction_id)}
+                                </code>
+                            </td>
+
+                            <td>
+                                ₹
+                                {Number(row.amount || 0)
+                                    .toLocaleString("en-IN")}
+                            </td>
+
+                            <td>{row.customer_id}</td>
+
+                            <td>
+                                <span
+                                    className={`risk-badge ${String(
+                                        row.risk_level || ""
+                                    ).toLowerCase()}`}
+                                >
+                                    {row.risk_level}
+                                </span>
+                            </td>
+
+                            <td>{row.status}</td>
+
+                            <td>{row.reason || "—"}</td>
+
+                        </tr>
+
+                    ))}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    );
+}
+
 
 function InvestigationPanel({ data }) {
 
-    const transaction =
-        data.transaction || {};
+    const transaction = data.transaction || {};
 
+    const riskLevel = String(
+        data.risk_level || "UNKNOWN"
+    ).toLowerCase();
 
-    const riskLevel =
-        String(
-            data.risk_level || "UNKNOWN"
-        ).toLowerCase();
+    const riskScore = Number(data.risk_score || 0);
 
+    const explanations = Array.isArray(data.explanations)
+        ? data.explanations
+        : [];
 
-    const riskScore =
-        Number(
-            data.risk_score || 0
-        );
-
-
-    const explanations =
-        Array.isArray(data.explanations)
-            ? data.explanations
-            : [];
-
-
-    const comparisons =
-        Array.isArray(data.behavior_comparison)
-            ? data.behavior_comparison
-            : [];
+    const comparisons = Array.isArray(data.behavior_comparison)
+        ? data.behavior_comparison
+        : [];
 
 
     return (
@@ -301,11 +931,12 @@ function InvestigationPanel({ data }) {
                         INVESTIGATION RESULT
                     </p>
 
-
                     <h2>
-                        Transaction
+                        ₹
+                        {Number(
+                            transaction.amount || 0
+                        ).toLocaleString("en-IN")}
                     </h2>
-
 
                     <code>
                         {data.transaction_id}
@@ -313,13 +944,8 @@ function InvestigationPanel({ data }) {
 
                 </div>
 
-
-                <div
-                    className={`risk-badge ${riskLevel}`}
-                >
-
-                    {data.risk_level}
-
+                <div className={`risk-badge ${riskLevel}`}>
+                    {data.risk_level} RISK
                 </div>
 
             </div>
@@ -330,13 +956,12 @@ function InvestigationPanel({ data }) {
                 <div className="risk-card">
 
                     <p>
-                        AI RISK SCORE
+                        RISK SCORE
                     </p>
-
 
                     <div className="risk-score">
 
-                        {riskScore.toFixed(1)}
+                        {riskScore.toFixed(0)}
 
                         <span>
                             /100
@@ -344,17 +969,12 @@ function InvestigationPanel({ data }) {
 
                     </div>
 
-
                     <div className="risk-bar">
 
                         <div
                             className={`risk-fill ${riskLevel}`}
                             style={{
-                                width:
-                                    `${Math.min(
-                                        riskScore,
-                                        100
-                                    )}%`
+                                width: `${Math.min(riskScore, 100)}%`
                             }}
                         />
 
@@ -369,23 +989,13 @@ function InvestigationPanel({ data }) {
                         TRANSACTION
                     </p>
 
-
                     <strong>
 
-                        ₹
-                        {Number(
-                            transaction.amount || 0
-                        ).toLocaleString("en-IN")}
+                        {transaction.payment_method || "Unknown"}
 
                     </strong>
 
-
                     <span>
-
-                        {transaction.payment_method ||
-                            "Unknown"}
-
-                        {" • "}
 
                         {transaction.merchant_category ||
                             "Unknown"}
@@ -398,17 +1008,20 @@ function InvestigationPanel({ data }) {
                 <div className="action-card">
 
                     <p>
-                        RECOMMENDED ACTION
+                        AI RECOMMENDATION
                     </p>
 
-
                     <strong>
-
-                        {formatAction(
-                            data.recommended_action
-                        )}
-
+                        {formatAction(data.recommended_action)}
                     </strong>
+
+                    <span>
+
+                        Multiple independent behavioral
+                        signals indicate elevated fraud risk
+                        when several alerts fire together.
+
+                    </span>
 
                 </div>
 
@@ -424,16 +1037,14 @@ function InvestigationPanel({ data }) {
                         <div>
 
                             <p className="section-label">
-                                MODEL EVIDENCE
+                                WHY WAS THIS FLAGGED?
                             </p>
 
-
                             <h3>
-                                Why was this flagged?
+                                Human-readable evidence
                             </h3>
 
                         </div>
-
 
                         <span className="ai-tag">
                             AI
@@ -441,54 +1052,43 @@ function InvestigationPanel({ data }) {
 
                     </div>
 
-
                     <div className="explanations">
 
                         {explanations.length === 0 && (
 
                             <p className="no-data">
-                                No explanation signals
-                                were returned.
+                                No elevated behavioral
+                                signals were returned.
                             </p>
 
                         )}
 
+                        {explanations.map((item, index) => (
 
-                        {explanations.map(
-                            (item, index) => (
+                            <div
+                                className="explanation"
+                                key={index}
+                            >
 
-                                <div
-                                    className="explanation"
-                                    key={index}
-                                >
+                                <div className="reason-index">
+                                    {String(index + 1).padStart(2, "0")}
+                                </div>
 
-                                    <div
-                                        className={`severity ${String(
-                                            item.severity ||
-                                            "medium"
-                                        ).toLowerCase()}`}
-                                    >
-                                        !
-                                    </div>
+                                <div>
 
+                                    <strong>
+                                        {item.title}
+                                    </strong>
 
-                                    <div>
-
-                                        <strong>
-                                            {item.title}
-                                        </strong>
-
-
-                                        <p>
-                                            {item.message}
-                                        </p>
-
-                                    </div>
+                                    <p>
+                                        {item.message}
+                                    </p>
 
                                 </div>
 
-                            )
-                        )}
+                            </div>
+
+                        ))}
 
                     </div>
 
@@ -502,9 +1102,8 @@ function InvestigationPanel({ data }) {
                         <div>
 
                             <p className="section-label">
-                                BEHAVIORAL ANALYSIS
+                                CUSTOMER BEHAVIOR
                             </p>
-
 
                             <h3>
                                 Normal vs current
@@ -514,8 +1113,13 @@ function InvestigationPanel({ data }) {
 
                     </div>
 
-
                     <div className="comparison">
+
+                        <div className="comparison-row header">
+                            <div>SIGNAL</div>
+                            <div>NORMAL</div>
+                            <div>CURRENT</div>
+                        </div>
 
                         {comparisons.length === 0 && (
 
@@ -526,36 +1130,28 @@ function InvestigationPanel({ data }) {
 
                         )}
 
+                        {comparisons.map((item, index) => (
 
-                        {comparisons.map(
-                            (item, index) => (
+                            <div
+                                className="comparison-row"
+                                key={index}
+                            >
 
-                                <div
-                                    className="comparison-row"
-                                    key={index}
-                                >
-
-                                    <div>
-                                        {item.signal ||
-                                            "Signal"}
-                                    </div>
-
-
-                                    <div>
-                                        {item.normal ||
-                                            "—"}
-                                    </div>
-
-
-                                    <div>
-                                        {item.current ||
-                                            "—"}
-                                    </div>
-
+                                <div>
+                                    {item.signal || "Signal"}
                                 </div>
 
-                            )
-                        )}
+                                <div>
+                                    {item.normal || "—"}
+                                </div>
+
+                                <div>
+                                    {item.current || "—"}
+                                </div>
+
+                            </div>
+
+                        ))}
 
                     </div>
 
@@ -567,63 +1163,31 @@ function InvestigationPanel({ data }) {
             <div className="transaction-info">
 
                 <div>
-
-                    <span>
-                        CUSTOMER
-                    </span>
-
-
+                    <span>CUSTOMER</span>
                     <strong>
-                        {transaction.customer_id ||
-                            "Unknown"}
+                        {transaction.customer_id || "Unknown"}
                     </strong>
-
                 </div>
 
-
                 <div>
-
-                    <span>
-                        LOCATION
-                    </span>
-
-
+                    <span>LOCATION</span>
                     <strong>
-                        {transaction.country ||
-                            transaction.ip_country ||
-                            "Unknown"}
+                        {transaction.country || "Unknown"}
                     </strong>
-
                 </div>
 
-
                 <div>
-
-                    <span>
-                        MERCHANT
-                    </span>
-
-
+                    <span>MERCHANT</span>
                     <strong>
-                        {transaction.merchant_category ||
-                            "Unknown"}
+                        {transaction.merchant_category || "Unknown"}
                     </strong>
-
                 </div>
 
-
                 <div>
-
-                    <span>
-                        TIMESTAMP
-                    </span>
-
-
+                    <span>TIMESTAMP</span>
                     <strong>
-                        {transaction.timestamp ||
-                            "Unknown"}
+                        {transaction.timestamp || "Unknown"}
                     </strong>
-
                 </div>
 
             </div>
@@ -634,6 +1198,66 @@ function InvestigationPanel({ data }) {
 }
 
 
+function StatCard({ label, value, tone }) {
+
+    return (
+
+        <div className={`stat-card ${tone || ""}`}>
+
+            <p>{label}</p>
+
+            <strong>{value}</strong>
+
+        </div>
+
+    );
+}
+
+
+function DistributionBar({ label, value, tone }) {
+
+    return (
+
+        <div className="dist-row">
+
+            <span>{label}</span>
+
+            <div className="dist-track">
+
+                <div
+                    className={`dist-fill ${tone}`}
+                    style={{ width: `${value || 0}%` }}
+                />
+
+            </div>
+
+            <strong>{value}%</strong>
+
+        </div>
+
+    );
+}
+
+
+function LoadingState({ text }) {
+
+    return (
+
+        <section className="loading-state">
+
+            <div className="loader"></div>
+
+            <h3>
+                Working
+            </h3>
+
+            <p>{text}</p>
+
+        </section>
+
+    );
+}
+
 
 function formatAction(action) {
 
@@ -641,31 +1265,43 @@ function formatAction(action) {
         return "Manual Review";
     }
 
-
     if (action === "STEP_UP_VERIFICATION") {
         return "Step-up Verification";
     }
-
 
     if (action === "ALLOW") {
         return "Allow Transaction";
     }
 
-
     if (!action) {
         return "Review Required";
     }
-
 
     return action
         .replaceAll("_", " ")
         .replace(
             /\b\w/g,
-            (letter) =>
-                letter.toUpperCase()
+            (letter) => letter.toUpperCase()
         );
 }
 
+
+function formatNumber(value) {
+
+    return Number(value || 0).toLocaleString("en-IN");
+}
+
+
+function shortId(id) {
+
+    const value = String(id || "");
+
+    if (value.length <= 12) {
+        return value;
+    }
+
+    return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
 
 
 export default App;
