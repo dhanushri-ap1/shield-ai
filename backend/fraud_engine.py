@@ -345,6 +345,78 @@ def get_model(df):
     return model
 
 
+def primary_reason(row):
+
+    if row["amount_ratio"] >= 3:
+        return "Amount"
+
+    if row["is_new_device"] == 1:
+        return "New device"
+
+    if row["is_new_location"] == 1:
+        return "Location"
+
+    if row["is_odd_hour"] == 1:
+        return "Odd hour"
+
+    if row["is_new_category"] == 1:
+        return "Category"
+
+    if row["is_new_payment_method"] == 1:
+        return "Payment method"
+
+    return "—"
+
+
+def attach_risk_scores(df, model):
+
+    probabilities = model.predict_proba(
+        df[FEATURES]
+    )[:, 1]
+
+    scored = df.copy()
+
+    scored["risk_score"] = (
+        (probabilities * 100)
+        .round(2)
+    )
+
+    scored["risk_level"] = "LOW"
+    scored.loc[
+        scored["risk_score"] >= 40,
+        "risk_level"
+    ] = "MEDIUM"
+    scored.loc[
+        scored["risk_score"] >= 70,
+        "risk_level"
+    ] = "HIGH"
+
+    scored["recommended_action"] = "ALLOW"
+    scored.loc[
+        scored["risk_level"] == "MEDIUM",
+        "recommended_action"
+    ] = "STEP_UP_VERIFICATION"
+    scored.loc[
+        scored["risk_level"] == "HIGH",
+        "recommended_action"
+    ] = "MANUAL_REVIEW"
+
+    scored["review_status"] = scored[
+        "risk_level"
+    ].map({
+        "HIGH": "Review",
+        "MEDIUM": "Review",
+        "LOW": "Clear"
+    })
+
+    scored["primary_reason"] = scored.apply(
+        primary_reason,
+        axis=1
+    )
+
+    return scored
+
+
 def investigate_with_model(
     transaction_id
 ):
@@ -463,6 +535,15 @@ print(
 
 MODEL = get_model(
     MODEL_DATA
+)
+
+print(
+    "Scoring transaction risk queue..."
+)
+
+MODEL_DATA = attach_risk_scores(
+    MODEL_DATA,
+    MODEL
 )
 
 print(

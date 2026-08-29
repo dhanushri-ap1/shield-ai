@@ -1,49 +1,40 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
-from backend.fraud_engine import (
-    investigate_with_model
-)
-
-from backend.transactions import (
-    get_recent_transactions,
-    search_transactions
+from backend.fraud_engine import investigate_with_model
+from backend.operations import (
+    analytics_risk,
+    dashboard_summary,
+    get_transaction,
+    list_transactions
 )
 
 
 app = FastAPI(
-    title="Shield-AI",
+    title="SHIELD-AI",
     description=(
-        "Explainable AI Fraud "
-        "Investigation API"
+        "Fraud & Risk Intelligence Platform"
     ),
-    version="1.0.0"
+    version="2.0.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
-# ============================================================
-# HOME
-# ============================================================
 
 @app.get("/")
 def home():
 
     return {
-
-        "application":
-            "Shield-AI",
-
-        "status":
-            "online",
-
-        "message":
-            "Explainable AI Fraud "
-            "Investigation API"
+        "application": "SHIELD-AI",
+        "status": "online",
+        "message": "Fraud & Risk Intelligence Platform"
     }
 
-
-# ============================================================
-# HEALTH CHECK
-# ============================================================
 
 @app.get("/health")
 def health():
@@ -53,15 +44,30 @@ def health():
     }
 
 
-# ============================================================
-# RECENT TRANSACTIONS
-# ============================================================
+@app.get("/api/dashboard/summary")
+def dashboard():
 
-@app.get(
-    "/api/transactions"
-)
-def recent_transactions(
-    limit: int = 20
+    return {
+        "success": True,
+        **dashboard_summary()
+    }
+
+
+@app.get("/api/analytics/risk")
+def analytics():
+
+    return {
+        "success": True,
+        **analytics_risk()
+    }
+
+
+@app.get("/api/transactions")
+def transactions(
+    query: str = "",
+    risk: str = "ALL",
+    limit: int = 25,
+    offset: int = 0
 ):
 
     if limit < 1:
@@ -70,28 +76,23 @@ def recent_transactions(
     if limit > 100:
         limit = 100
 
+    if offset < 0:
+        offset = 0
+
+    result = list_transactions(
+        query=query,
+        risk=risk,
+        limit=limit,
+        offset=offset
+    )
+
     return {
-
-        "success":
-            True,
-
-        "count":
-            limit,
-
-        "transactions":
-            get_recent_transactions(
-                limit
-            )
+        "success": True,
+        **result
     }
 
 
-# ============================================================
-# SEARCH TRANSACTIONS
-# ============================================================
-
-@app.get(
-    "/api/transactions/search"
-)
+@app.get("/api/transactions/search")
 def search(
     query: str,
     limit: int = 20
@@ -104,46 +105,24 @@ def search(
             detail="Search query is required"
         )
 
-    if limit < 1:
-        limit = 1
-
-    if limit > 100:
-        limit = 100
-
-    results = search_transactions(
-        query,
-        limit
+    result = list_transactions(
+        query=query,
+        risk="ALL",
+        limit=limit,
+        offset=0
     )
 
     return {
-
-        "success":
-            True,
-
-        "count":
-            len(results),
-
-        "transactions":
-            results
+        "success": True,
+        "count": result["count"],
+        "transactions": result["transactions"]
     }
 
 
-# ============================================================
-# AI INVESTIGATION
-# ============================================================
+@app.get("/api/transactions/{transaction_id}")
+def transaction_detail(transaction_id: str):
 
-@app.get(
-    "/api/investigate/{transaction_id}"
-)
-def investigate(
-    transaction_id: str
-):
-
-    result = (
-        investigate_with_model(
-            transaction_id
-        )
-    )
+    result = get_transaction(transaction_id)
 
     if result is None:
 
@@ -152,71 +131,56 @@ def investigate(
             detail="Transaction not found"
         )
 
-    transaction = (
-        result["transaction"]
-    )
+    return {
+        "success": True,
+        "transaction": result
+    }
+
+
+@app.get("/api/investigate/{transaction_id}")
+def investigate(transaction_id: str):
+
+    result = investigate_with_model(transaction_id)
+
+    if result is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Transaction not found"
+        )
+
+    transaction = result["transaction"]
 
     return {
 
-        "success":
-            True,
+        "success": True,
 
-        "transaction_id":
-            transaction_id,
+        "transaction_id": transaction_id,
 
-        "risk_score":
-            result["risk_score"],
+        "risk_score": result["risk_score"],
 
-        "risk_level":
-            result["risk_level"],
+        "risk_level": result["risk_level"],
 
-        "recommended_action":
-            result[
-                "recommended_action"
-            ],
+        "recommended_action": result["recommended_action"],
 
         "transaction": {
 
-            "amount":
-                float(
-                    transaction["amount"]
-                ),
+            "amount": float(transaction["amount"]),
 
-            "customer_id":
-                transaction[
-                    "customer_id"
-                ],
+            "customer_id": transaction["customer_id"],
 
-            "payment_method":
-                transaction[
-                    "payment_method"
-                ],
+            "payment_method": transaction["payment_method"],
 
-            "merchant_category":
-                transaction[
-                    "merchant_category"
-                ],
+            "merchant_category": transaction["merchant_category"],
 
-            "country":
-                transaction[
-                    "ip_country"
-                ],
+            "country": transaction["ip_country"],
 
-            "timestamp":
-                str(
-                    transaction[
-                        "timestamp"
-                    ]
-                )
+            "timestamp": str(transaction["timestamp"]),
+
+            "device_id": str(transaction.get("device_id", ""))
         },
 
-        "explanations":
-            result[
-                "explanations"
-            ],
+        "explanations": result["explanations"],
 
-        "behavior_comparison":
-            result[
-                "behavior_comparison"
-            ]
+        "behavior_comparison": result["behavior_comparison"]
     }
