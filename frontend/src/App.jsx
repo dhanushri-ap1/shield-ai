@@ -1,88 +1,457 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-
 function App() {
+    const [activePage, setActivePage] = useState("overview");
 
-    const [section, setSection] = useState("overview");
-    const [transactionId, setTransactionId] = useState("");
-    const [investigation, setInvestigation] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+    const [transactions, setTransactions] = useState([]);
+    const [filteredTransactions, setFilteredTransactions] = useState([]);
+
+    const [loadingTransactions, setLoadingTransactions] =
+        useState(true);
+
+    const [transactionsError, setTransactionsError] =
+        useState("");
+
+    const [searchQuery, setSearchQuery] = useState("");
+
+    const [investigation, setInvestigation] =
+        useState(null);
+
+    const [selectedTransaction, setSelectedTransaction] =
+        useState(null);
+
+    const [loadingInvestigation, setLoadingInvestigation] =
+        useState(false);
+
+    const [investigationError, setInvestigationError] =
+        useState("");
 
 
-    function openInvestigation(id) {
+    // =====================================================
+    // LOAD TRANSACTIONS
+    // =====================================================
 
-        setTransactionId(id);
-        setSection("investigate");
-        investigate(id);
-    }
-
-
-    async function investigate(id) {
-
-        const lookup = (id || transactionId).trim();
-
-        if (!lookup) {
-            setError("Enter a transaction ID.");
-            return;
-        }
-
-        setLoading(true);
-        setError("");
-        setInvestigation(null);
+    async function loadTransactions() {
+        setLoadingTransactions(true);
+        setTransactionsError("");
 
         try {
-
             const response = await fetch(
-                `/api/investigate/${lookup}`
+                "/api/transactions?limit=100"
             );
 
             if (!response.ok) {
-
-                let message = "Transaction investigation failed.";
-
-                try {
-                    const errorData = await response.json();
-
-                    if (errorData.detail) {
-                        message = errorData.detail;
-                    }
-
-                } catch {
-                    // Ignore invalid error response
-                }
-
-                throw new Error(message);
+                throw new Error(
+                    "Unable to load transactions."
+                );
             }
 
             const data = await response.json();
 
-            setInvestigation(data);
+            const loadedTransactions =
+                data.transactions || [];
 
-        } catch (err) {
+            setTransactions(
+                loadedTransactions
+            );
 
-            setError(
-                err.message ||
+            setFilteredTransactions(
+                loadedTransactions
+            );
+
+        } catch (error) {
+            console.error(
+                "Transaction loading error:",
+                error
+            );
+
+            setTransactionsError(
+                error.message ||
                 "Unable to connect to Shield-AI backend."
             );
 
         } finally {
+            setLoadingTransactions(false);
+        }
+    }
 
-            setLoading(false);
+
+    // =====================================================
+    // LOAD DATA WHEN APP STARTS
+    // =====================================================
+
+    useEffect(() => {
+        loadTransactions();
+    }, []);
+
+
+    // =====================================================
+    // SEARCH TRANSACTIONS
+    // =====================================================
+
+    useEffect(() => {
+
+        const query =
+            searchQuery
+                .trim()
+                .toLowerCase();
+
+        if (!query) {
+            setFilteredTransactions(
+                transactions
+            );
+
+            return;
+        }
+
+        const results =
+            transactions.filter(
+                (transaction) =>
+                    transaction.transaction_id
+                        .toLowerCase()
+                        .includes(query) ||
+
+                    transaction.customer_id
+                        .toLowerCase()
+                        .includes(query)
+            );
+
+        setFilteredTransactions(
+            results
+        );
+
+    }, [
+        searchQuery,
+        transactions
+    ]);
+
+
+    // =====================================================
+    // DASHBOARD STATISTICS
+    // =====================================================
+
+    const statistics = useMemo(() => {
+
+        const total =
+            transactions.length;
+
+        const fraudTransactions =
+            transactions.filter(
+                (transaction) =>
+                    transaction.is_fraud === 1
+            );
+
+        const safeTransactions =
+            transactions.filter(
+                (transaction) =>
+                    transaction.is_fraud === 0
+            );
+
+        const totalAmount =
+            transactions.reduce(
+                (sum, transaction) =>
+                    sum + transaction.amount,
+                0
+            );
+
+        const fraudRate =
+            total === 0
+                ? 0
+                : (
+                    fraudTransactions.length /
+                    total
+                ) * 100;
+
+        return {
+            total,
+            fraudCount:
+                fraudTransactions.length,
+            safeCount:
+                safeTransactions.length,
+            totalAmount,
+            fraudRate
+        };
+
+    }, [transactions]);
+
+
+    // =====================================================
+    // OPEN INVESTIGATION
+    // =====================================================
+
+    async function openInvestigation(
+        transaction
+    ) {
+
+        setSelectedTransaction(
+            transaction
+        );
+
+        setActivePage(
+            "investigation"
+        );
+
+        setLoadingInvestigation(
+            true
+        );
+
+        setInvestigationError(
+            ""
+        );
+
+        setInvestigation(
+            null
+        );
+
+        try {
+
+            const response =
+                await fetch(
+                    `/api/investigate/${transaction.transaction_id}`
+                );
+
+            if (!response.ok) {
+
+                let message =
+                    "Investigation failed.";
+
+                try {
+
+                    const errorData =
+                        await response.json();
+
+                    if (
+                        errorData.detail
+                    ) {
+                        message =
+                            errorData.detail;
+                    }
+
+                } catch {
+                    // Ignore invalid JSON response
+                }
+
+                throw new Error(
+                    message
+                );
+            }
+
+            const data =
+                await response.json();
+
+            console.log(
+                "Investigation:",
+                data
+            );
+
+            setInvestigation(
+                data
+            );
+
+        } catch (error) {
+
+            console.error(
+                "Investigation error:",
+                error
+            );
+
+            setInvestigationError(
+                error.message ||
+                "Unable to investigate transaction."
+            );
+
+        } finally {
+
+            setLoadingInvestigation(
+                false
+            );
+        }
+    }
+
+
+    // =====================================================
+    // FORMATTERS
+    // =====================================================
+
+    function formatCurrency(amount) {
+
+        return new Intl.NumberFormat(
+            "en-IN",
+            {
+                style: "currency",
+                currency: "INR",
+                maximumFractionDigits: 0
+            }
+        ).format(amount);
+    }
+
+
+    function formatDate(timestamp) {
+
+        const date =
+            new Date(timestamp);
+
+        if (Number.isNaN(date.getTime())) {
+            return timestamp;
+        }
+
+        return date.toLocaleString(
+            "en-IN",
+            {
+                dateStyle: "medium",
+                timeStyle: "short"
+            }
+        );
+    }
+
+
+    // =====================================================
+    // NAVIGATION
+    // =====================================================
+
+    function navigate(page) {
+
+        setActivePage(page);
+
+        if (
+            page !== "investigation"
+        ) {
+
+            setInvestigation(null);
+
+            setSelectedTransaction(null);
+
+            setInvestigationError("");
+        }
+    }
+
+
+    // =====================================================
+    // RENDER PAGE
+    // =====================================================
+
+    function renderPage() {
+
+        if (
+            activePage === "overview"
+        ) {
+            return (
+                <OverviewPage
+                    statistics={statistics}
+                    transactions={transactions}
+                    loading={loadingTransactions}
+                    error={transactionsError}
+                    onInvestigate={
+                        openInvestigation
+                    }
+                    formatCurrency={
+                        formatCurrency
+                    }
+                />
+            );
+        }
+
+
+        if (
+            activePage === "transactions"
+        ) {
+            return (
+                <TransactionsPage
+                    transactions={
+                        filteredTransactions
+                    }
+                    loading={
+                        loadingTransactions
+                    }
+                    error={
+                        transactionsError
+                    }
+                    searchQuery={
+                        searchQuery
+                    }
+                    onSearch={
+                        setSearchQuery
+                    }
+                    onInvestigate={
+                        openInvestigation
+                    }
+                    formatCurrency={
+                        formatCurrency
+                    }
+                    formatDate={
+                        formatDate
+                    }
+                    onRefresh={
+                        loadTransactions
+                    }
+                />
+            );
+        }
+
+
+        if (
+            activePage === "investigation"
+        ) {
+            return (
+                <InvestigationPage
+                    transaction={
+                        selectedTransaction
+                    }
+                    investigation={
+                        investigation
+                    }
+                    loading={
+                        loadingInvestigation
+                    }
+                    error={
+                        investigationError
+                    }
+                    onBack={() =>
+                        navigate(
+                            "transactions"
+                        )
+                    }
+                    formatCurrency={
+                        formatCurrency
+                    }
+                />
+            );
+        }
+
+
+        if (
+            activePage === "analytics"
+        ) {
+            return (
+                <AnalyticsPage
+                    transactions={
+                        transactions
+                    }
+                    statistics={
+                        statistics
+                    }
+                    loading={
+                        loadingTransactions
+                    }
+                    formatCurrency={
+                        formatCurrency
+                    }
+                />
+            );
         }
     }
 
 
     return (
 
-        <div className="app">
+        <div className="app-shell">
 
-            <header className="navbar">
+            <aside className="sidebar">
 
-                <div className="brand">
+                <div className="logo">
 
-                    <div className="brand-icon">
+                    <div className="logo-icon">
                         S
                     </div>
 
@@ -93,1214 +462,1161 @@ function App() {
                         </h1>
 
                         <span>
-                            Fraud & Risk Intelligence
+                            FRAUD INTELLIGENCE
                         </span>
 
                     </div>
 
                 </div>
 
-                <div className="system-status">
 
-                    <span className="status-dot"></span>
+                <nav className="navigation">
 
-                    SYSTEM OPERATIONAL
+                    <button
+                        className={
+                            activePage ===
+                            "overview"
+                                ? "nav-item active"
+                                : "nav-item"
+                        }
+                        onClick={() =>
+                            navigate(
+                                "overview"
+                            )
+                        }
+                    >
+                        Overview
+                    </button>
 
-                </div>
 
-            </header>
+                    <button
+                        className={
+                            activePage ===
+                            "transactions"
+                                ? "nav-item active"
+                                : "nav-item"
+                        }
+                        onClick={() =>
+                            navigate(
+                                "transactions"
+                            )
+                        }
+                    >
+                        Transactions
+                    </button>
 
 
-            <div className="shell">
-
-                <nav className="sidebar">
-
-                    <p className="nav-label">
-                        OPERATIONS
-                    </p>
-
-                    <NavButton
-                        id="overview"
-                        label="Overview"
-                        current={section}
-                        onSelect={setSection}
-                    />
-
-                    <NavButton
-                        id="transactions"
-                        label="Transactions"
-                        current={section}
-                        onSelect={setSection}
-                    />
-
-                    <NavButton
-                        id="investigate"
-                        label="Investigate"
-                        current={section}
-                        onSelect={setSection}
-                    />
-
-                    <NavButton
-                        id="analytics"
-                        label="Analytics"
-                        current={section}
-                        onSelect={setSection}
-                    />
-
-                    <NavButton
-                        id="settings"
-                        label="Settings"
-                        current={section}
-                        onSelect={setSection}
-                    />
+                    <button
+                        className={
+                            activePage ===
+                            "analytics"
+                                ? "nav-item active"
+                                : "nav-item"
+                        }
+                        onClick={() =>
+                            navigate(
+                                "analytics"
+                            )
+                        }
+                    >
+                        Analytics
+                    </button>
 
                 </nav>
 
 
-                <main className="workspace">
+                <div className="sidebar-footer">
 
-                    {section === "overview" && (
+                    <span className="status-dot" />
 
-                        <OverviewPage
-                            onOpen={openInvestigation}
-                        />
-
-                    )}
-
-
-                    {section === "transactions" && (
-
-                        <TransactionsPage
-                            onOpen={openInvestigation}
-                        />
-
-                    )}
-
-
-                    {section === "investigate" && (
-
-                        <InvestigatePage
-                            transactionId={transactionId}
-                            setTransactionId={setTransactionId}
-                            investigation={investigation}
-                            loading={loading}
-                            error={error}
-                            onInvestigate={() =>
-                                investigate()
-                            }
-                        />
-
-                    )}
-
-
-                    {section === "analytics" && (
-                        <AnalyticsPage />
-                    )}
-
-
-                    {section === "settings" && (
-                        <SettingsPage />
-                    )}
-
-                </main>
-
-            </div>
-
-        </div>
-
-    );
-}
-
-
-function NavButton({ id, label, current, onSelect }) {
-
-    return (
-
-        <button
-            className={
-                current === id
-                    ? "nav-btn active"
-                    : "nav-btn"
-            }
-            onClick={() => onSelect(id)}
-        >
-            {label}
-        </button>
-
-    );
-}
-
-
-function OverviewPage({ onOpen }) {
-
-    const [summary, setSummary] = useState(null);
-    const [error, setError] = useState("");
-
-
-    useEffect(() => {
-
-        fetch("/api/dashboard/summary")
-            .then(async (response) => {
-
-                if (!response.ok) {
-                    throw new Error("Dashboard failed to load.");
-                }
-
-                return response.json();
-            })
-            .then(setSummary)
-            .catch((err) =>
-                setError(err.message)
-            );
-
-    }, []);
-
-
-    if (error) {
-        return <p className="error">{error}</p>;
-    }
-
-
-    if (!summary) {
-        return <LoadingState text="Loading risk overview..." />;
-    }
-
-
-    const dist = summary.risk_distribution || {};
-
-
-    return (
-
-        <section>
-
-            <p className="eyebrow">
-                TODAY'S RISK OVERVIEW
-            </p>
-
-            <h2 className="page-title">
-                Risk operations
-            </h2>
-
-
-            <div className="stat-grid">
-
-                <StatCard
-                    label="Total"
-                    value={formatNumber(
-                        summary.total_transactions
-                    )}
-                />
-
-                <StatCard
-                    label="Flagged"
-                    value={formatNumber(
-                        summary.flagged_transactions
-                    )}
-                />
-
-                <StatCard
-                    label="High risk"
-                    value={formatNumber(
-                        summary.high_risk
-                    )}
-                    tone="high"
-                />
-
-                <StatCard
-                    label="Under review"
-                    value={formatNumber(
-                        summary.under_review
-                    )}
-                />
-
-                <StatCard
-                    label="False positive rate"
-                    value={`${summary.false_positive_rate}%`}
-                />
-
-            </div>
-
-
-            <div className="panel">
-
-                <p className="section-label">
-                    RISK DISTRIBUTION
-                </p>
-
-                <div className="distribution">
-
-                    <DistributionBar
-                        label="LOW"
-                        value={dist.LOW}
-                        tone="low"
-                    />
-
-                    <DistributionBar
-                        label="MEDIUM"
-                        value={dist.MEDIUM}
-                        tone="medium"
-                    />
-
-                    <DistributionBar
-                        label="HIGH"
-                        value={dist.HIGH}
-                        tone="high"
-                    />
+                    SYSTEM ONLINE
 
                 </div>
 
-            </div>
+            </aside>
 
 
-            <div className="panel">
+            <main className="content">
 
-                <p className="section-label">
-                    TRANSACTION QUEUE
-                </p>
+                <header className="topbar">
 
-                <TransactionTable
-                    rows={summary.recent_suspicious || []}
-                    onOpen={onOpen}
-                />
+                    <div>
 
-            </div>
+                        <p className="topbar-label">
+                            SHIELD-AI RISK PLATFORM
+                        </p>
 
-        </section>
+                        <h2>
+                            {
+                                activePage ===
+                                "overview"
+                                    ? "Risk Overview"
+                                    : activePage ===
+                                      "transactions"
+                                    ? "Transactions"
+                                    : activePage ===
+                                      "analytics"
+                                    ? "Risk Analytics"
+                                    : "AI Investigation"
+                            }
+                        </h2>
 
+                    </div>
+
+
+                    <button
+                        className="refresh-button"
+                        onClick={
+                            loadTransactions
+                        }
+                    >
+                        Refresh Data
+                    </button>
+
+                </header>
+
+
+                {renderPage()}
+
+            </main>
+
+        </div>
     );
 }
 
 
-function TransactionsPage({ onOpen }) {
+// =========================================================
+// OVERVIEW PAGE
+// =========================================================
 
-    const [query, setQuery] = useState("");
-    const [risk, setRisk] = useState("ALL");
-    const [offset, setOffset] = useState(0);
-    const [data, setData] = useState(null);
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(true);
+function OverviewPage({
+    statistics,
+    transactions,
+    loading,
+    error,
+    onInvestigate,
+    formatCurrency
+}) {
 
-    const limit = 25;
-
-
-    useEffect(() => {
-
-        const params = new URLSearchParams({
-            query,
-            risk,
-            limit: String(limit),
-            offset: String(offset)
-        });
-
-        setLoading(true);
-
-        fetch(`/api/transactions?${params}`)
-            .then(async (response) => {
-
-                if (!response.ok) {
-                    throw new Error("Unable to load transactions.");
-                }
-
-                return response.json();
-            })
-            .then(setData)
-            .catch((err) => setError(err.message))
-            .finally(() => setLoading(false));
-
-    }, [query, risk, offset]);
+    const suspiciousTransactions =
+        transactions
+            .filter(
+                (transaction) =>
+                    transaction.is_fraud === 1
+            )
+            .slice(0, 5);
 
 
     return (
 
-        <section>
+        <div className="page">
 
-            <p className="eyebrow">
-                TRANSACTIONS
-            </p>
+            <section className="page-intro">
 
-            <h2 className="page-title">
-                Live transaction queue
-            </h2>
+                <p className="eyebrow">
+                    REAL-TIME FRAUD MONITORING
+                </p>
 
+                <h3>
+                    Monitor risk across
+                    your payment ecosystem.
+                </h3>
 
-            <div className="toolbar">
+                <p>
+                    Shield-AI analyzes
+                    transaction behaviour and
+                    helps investigators
+                    understand suspicious
+                    activity.
+                </p>
 
-                <input
-                    value={query}
-                    onChange={(event) => {
-                        setOffset(0);
-                        setQuery(event.target.value);
-                    }}
-                    placeholder="Search transaction or customer..."
-                />
-
-                {["ALL", "HIGH", "MEDIUM", "LOW"].map((level) => (
-
-                    <button
-                        key={level}
-                        className={
-                            risk === level
-                                ? "filter-btn active"
-                                : "filter-btn"
-                        }
-                        onClick={() => {
-                            setOffset(0);
-                            setRisk(level);
-                        }}
-                    >
-                        {level === "ALL" ? "All" : level}
-                    </button>
-
-                ))}
-
-            </div>
+            </section>
 
 
-            {error && <p className="error">{error}</p>}
-
-
-            {loading && !data && (
-                <LoadingState text="Loading transactions..." />
+            {loading && (
+                <div className="loading-card">
+                    Loading transaction data...
+                </div>
             )}
 
 
-            {data && (
+            {error && (
+                <div className="error-card">
+                    {error}
+                </div>
+            )}
+
+
+            {!loading && !error && (
 
                 <>
 
-                    <p className="result-count">
+                    <section className="stats-grid">
 
-                        {formatNumber(data.total)} transactions
+                        <StatCard
+                            label="TOTAL TRANSACTIONS"
+                            value={
+                                statistics.total
+                            }
+                        />
 
-                    </p>
 
-                    <TransactionTable
-                        rows={data.transactions || []}
-                        onOpen={onOpen}
-                    />
+                        <StatCard
+                            label="FLAGGED TRANSACTIONS"
+                            value={
+                                statistics.fraudCount
+                            }
+                        />
 
-                    <div className="pager">
 
-                        <button
-                            disabled={offset === 0}
-                            onClick={() =>
-                                setOffset(
-                                    Math.max(0, offset - limit)
+                        <StatCard
+                            label="FRAUD RATE"
+                            value={
+                                `${statistics.fraudRate.toFixed(
+                                    1
+                                )}%`
+                            }
+                        />
+
+
+                        <StatCard
+                            label="TRANSACTION VOLUME"
+                            value={
+                                formatCurrency(
+                                    statistics.totalAmount
                                 )
                             }
-                        >
-                            Previous
-                        </button>
+                        />
 
-                        <span>
+                    </section>
 
-                            {offset + 1}
-                            –
-                            {Math.min(
-                                offset + limit,
-                                data.total
-                            )}
 
-                        </span>
+                    <section className="panel">
 
-                        <button
-                            disabled={
-                                offset + limit >= data.total
-                            }
-                            onClick={() =>
-                                setOffset(offset + limit)
-                            }
-                        >
-                            Next
-                        </button>
+                        <div className="panel-header">
 
-                    </div>
+                            <div>
+
+                                <p className="section-label">
+                                    PRIORITY QUEUE
+                                </p>
+
+                                <h3>
+                                    Recently flagged
+                                    transactions
+                                </h3>
+
+                            </div>
+
+                        </div>
+
+
+                        {suspiciousTransactions.length ===
+                        0 ? (
+
+                            <p className="empty-message">
+                                No flagged transactions
+                                found in the current
+                                dataset.
+                            </p>
+
+                        ) : (
+
+                            <div className="transaction-list">
+
+                                {suspiciousTransactions.map(
+                                    (transaction) => (
+
+                                        <TransactionRow
+                                            key={
+                                                transaction.transaction_id
+                                            }
+                                            transaction={
+                                                transaction
+                                            }
+                                            onClick={
+                                                onInvestigate
+                                            }
+                                            formatCurrency={
+                                                formatCurrency
+                                            }
+                                        />
+
+                                    )
+                                )}
+
+                            </div>
+
+                        )}
+
+                    </section>
 
                 </>
 
             )}
 
-        </section>
-
+        </div>
     );
 }
 
 
-function InvestigatePage({
-    transactionId,
-    setTransactionId,
-    investigation,
-    loading,
-    error,
-    onInvestigate
+// =========================================================
+// STAT CARD
+// =========================================================
+
+function StatCard({
+    label,
+    value
 }) {
 
     return (
 
-        <section>
+        <div className="stat-card">
 
-            <p className="eyebrow">
-                TRANSACTION INVESTIGATION
+            <p>
+                {label}
             </p>
 
-            <h2 className="page-title">
-                AI investigation workspace
-            </h2>
+            <h3>
+                {value}
+            </h3>
+
+        </div>
+    );
+}
 
 
-            <div className="search-card">
+// =========================================================
+// TRANSACTIONS PAGE
+// =========================================================
 
-                <p className="search-label">
-                    LOOK UP A TRANSACTION
+function TransactionsPage({
+    transactions,
+    loading,
+    error,
+    searchQuery,
+    onSearch,
+    onInvestigate,
+    formatCurrency,
+    formatDate,
+    onRefresh
+}) {
+
+    return (
+
+        <div className="page">
+
+            <section className="page-intro">
+
+                <p className="eyebrow">
+                    TRANSACTION MONITORING
                 </p>
 
-                <div className="search-row">
+                <h3>
+                    Investigate payment
+                    activity.
+                </h3>
 
-                    <input
-                        value={transactionId}
-                        onChange={(event) =>
-                            setTransactionId(
-                                event.target.value
-                            )
-                        }
-                        onKeyDown={(event) => {
+            </section>
 
-                            if (event.key === "Enter") {
-                                onInvestigate();
-                            }
 
-                        }}
-                        placeholder="Enter transaction ID..."
-                    />
+            <section className="toolbar">
 
-                    <button
-                        onClick={onInvestigate}
-                        disabled={loading}
-                    >
+                <input
+                    type="text"
+                    value={
+                        searchQuery
+                    }
+                    onChange={(event) =>
+                        onSearch(
+                            event.target.value
+                        )
+                    }
+                    placeholder="Search by transaction ID or customer ID..."
+                />
 
-                        {loading
-                            ? "Analyzing..."
-                            : "Investigate"}
 
-                    </button>
+                <button
+                    onClick={
+                        onRefresh
+                    }
+                >
+                    Reload
+                </button>
 
+            </section>
+
+
+            {loading && (
+                <div className="loading-card">
+                    Loading transactions...
                 </div>
+            )}
 
-                {error && (
-                    <p className="error">
-                        {error}
-                    </p>
-                )}
+
+            {error && (
+                <div className="error-card">
+                    {error}
+                </div>
+            )}
+
+
+            {!loading && !error && (
+
+                <section className="table-panel">
+
+                    <div className="table-scroll">
+
+                        <table>
+
+                            <thead>
+
+                                <tr>
+
+                                    <th>
+                                        Transaction ID
+                                    </th>
+
+                                    <th>
+                                        Customer
+                                    </th>
+
+                                    <th>
+                                        Amount
+                                    </th>
+
+                                    <th>
+                                        Method
+                                    </th>
+
+                                    <th>
+                                        Category
+                                    </th>
+
+                                    <th>
+                                        Country
+                                    </th>
+
+                                    <th>
+                                        Status
+                                    </th>
+
+                                    <th>
+                                        Action
+                                    </th>
+
+                                </tr>
+
+                            </thead>
+
+
+                            <tbody>
+
+                                {transactions.map(
+                                    (transaction) => (
+
+                                        <tr
+                                            key={
+                                                transaction.transaction_id
+                                            }
+                                        >
+
+                                            <td className="transaction-id">
+                                                {
+                                                    transaction.transaction_id
+                                                }
+                                            </td>
+
+
+                                            <td>
+                                                {
+                                                    transaction.customer_id
+                                                }
+                                            </td>
+
+
+                                            <td>
+                                                {
+                                                    formatCurrency(
+                                                        transaction.amount
+                                                    )
+                                                }
+                                            </td>
+
+
+                                            <td>
+                                                {
+                                                    transaction.payment_method
+                                                }
+                                            </td>
+
+
+                                            <td>
+                                                {
+                                                    transaction.merchant_category
+                                                }
+                                            </td>
+
+
+                                            <td>
+                                                {
+                                                    transaction.country
+                                                }
+                                            </td>
+
+
+                                            <td>
+
+                                                <span
+                                                    className={
+                                                        transaction.is_fraud ===
+                                                        1
+                                                            ? "risk-badge high"
+                                                            : "risk-badge safe"
+                                                    }
+                                                >
+
+                                                    {transaction.is_fraud ===
+                                                    1
+                                                        ? "FLAGGED"
+                                                        : "NORMAL"}
+
+                                                </span>
+
+                                            </td>
+
+
+                                            <td>
+
+                                                <button
+                                                    className="investigate-button"
+                                                    onClick={() =>
+                                                        onInvestigate(
+                                                            transaction
+                                                        )
+                                                    }
+                                                >
+                                                    Investigate
+                                                </button>
+
+                                            </td>
+
+                                        </tr>
+
+                                    )
+                                )}
+
+
+                                {transactions.length ===
+                                0 && (
+
+                                    <tr>
+
+                                        <td
+                                            colSpan="8"
+                                            className="no-results"
+                                        >
+                                            No transactions found.
+                                        </td>
+
+                                    </tr>
+
+                                )}
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </section>
+
+            )}
+
+        </div>
+    );
+}
+
+
+// =========================================================
+// SMALL TRANSACTION ROW
+// =========================================================
+
+function TransactionRow({
+    transaction,
+    onClick,
+    formatCurrency
+}) {
+
+    return (
+
+        <button
+            className="transaction-row"
+            onClick={() =>
+                onClick(
+                    transaction
+                )
+            }
+        >
+
+            <div>
+
+                <strong>
+                    {
+                        transaction.transaction_id
+                    }
+                </strong>
+
+                <span>
+                    {
+                        transaction.customer_id
+                    }
+                </span>
 
             </div>
 
 
-            {!investigation && !loading && (
+            <div>
 
-                <div className="empty-state">
+                <strong>
+                    {
+                        formatCurrency(
+                            transaction.amount
+                        )
+                    }
+                </strong>
 
-                    <div className="empty-icon">
-                        ◈
-                    </div>
+                <span>
+                    {
+                        transaction.country
+                    }
+                </span>
 
-                    <h3>
-                        Select a transaction
-                    </h3>
+            </div>
+
+
+            <span className="investigate-link">
+                Investigate →
+            </span>
+
+        </button>
+    );
+}
+
+
+// =========================================================
+// INVESTIGATION PAGE
+// =========================================================
+
+function InvestigationPage({
+    transaction,
+    investigation,
+    loading,
+    error,
+    onBack,
+    formatCurrency
+}) {
+
+    return (
+
+        <div className="page">
+
+            <button
+                className="back-button"
+                onClick={
+                    onBack
+                }
+            >
+                ← Back to Transactions
+            </button>
+
+
+            <section className="page-intro">
+
+                <p className="eyebrow">
+                    AI FRAUD INVESTIGATION
+                </p>
+
+                <h3>
+                    Transaction analysis
+                </h3>
+
+                {transaction && (
 
                     <p>
-
-                        Open a row from Transactions, or enter
-                        an ID to generate human-readable
-                        risk reasoning.
-
+                        Transaction ID:
+                        {" "}
+                        <strong>
+                            {
+                                transaction.transaction_id
+                            }
+                        </strong>
                     </p>
 
-                </div>
+                )}
 
-            )}
+            </section>
 
 
             {loading && (
-                <LoadingState text="Analyzing transaction behavior, risk signals and historical patterns..." />
+                <div className="loading-card">
+                    AI is analyzing this
+                    transaction...
+                </div>
+            )}
+
+
+            {error && (
+                <div className="error-card">
+                    {error}
+                </div>
             )}
 
 
             {investigation && (
-                <InvestigationPanel data={investigation} />
+
+                <>
+
+                    <section className="investigation-grid">
+
+                        <div className="risk-score-card">
+
+                            <p>
+                                AI RISK SCORE
+                            </p>
+
+                            <h2>
+                                {
+                                    investigation.risk_score
+                                }
+                            </h2>
+
+                            <span>
+                                {
+                                    investigation.risk_level
+                                }
+                            </span>
+
+                        </div>
+
+
+                        <div className="recommendation-card">
+
+                            <p>
+                                RECOMMENDED ACTION
+                            </p>
+
+                            <h3>
+                                {
+                                    investigation.recommended_action
+                                }
+                            </h3>
+
+                        </div>
+
+                    </section>
+
+
+                    <section className="details-grid">
+
+                        <InfoCard
+                            label="Amount"
+                            value={
+                                formatCurrency(
+                                    investigation.transaction.amount
+                                )
+                            }
+                        />
+
+                        <InfoCard
+                            label="Customer"
+                            value={
+                                investigation.transaction.customer_id
+                            }
+                        />
+
+                        <InfoCard
+                            label="Payment Method"
+                            value={
+                                investigation.transaction.payment_method
+                            }
+                        />
+
+                        <InfoCard
+                            label="Merchant Category"
+                            value={
+                                investigation.transaction.merchant_category
+                            }
+                        />
+
+                        <InfoCard
+                            label="Country"
+                            value={
+                                investigation.transaction.country
+                            }
+                        />
+
+                        <InfoCard
+                            label="Timestamp"
+                            value={
+                                investigation.transaction.timestamp
+                            }
+                        />
+
+                    </section>
+
+
+                    <section className="panel">
+
+                        <p className="section-label">
+                            AI EXPLANATION
+                        </p>
+
+                        <h3>
+                            Why this transaction
+                            was flagged
+                        </h3>
+
+
+                        <ExplanationContent
+                            data={
+                                investigation.explanations
+                            }
+                        />
+
+                    </section>
+
+
+                    <section className="panel">
+
+                        <p className="section-label">
+                            BEHAVIOUR COMPARISON
+                        </p>
+
+                        <h3>
+                            Customer behaviour
+                            analysis
+                        </h3>
+
+
+                        <ExplanationContent
+                            data={
+                                investigation.behavior_comparison
+                            }
+                        />
+
+                    </section>
+
+                </>
+
             )}
 
-        </section>
-
+        </div>
     );
 }
 
 
-function AnalyticsPage() {
+// =========================================================
+// INFO CARD
+// =========================================================
 
-    const [data, setData] = useState(null);
-    const [error, setError] = useState("");
+function InfoCard({
+    label,
+    value
+}) {
+
+    return (
+
+        <div className="info-card">
+
+            <p>
+                {label}
+            </p>
+
+            <strong>
+                {String(value)}
+            </strong>
+
+        </div>
+    );
+}
 
 
-    useEffect(() => {
+// =========================================================
+// DYNAMIC EXPLANATION RENDERER
+// =========================================================
 
-        fetch("/api/analytics/risk")
-            .then(async (response) => {
-
-                if (!response.ok) {
-                    throw new Error("Analytics failed to load.");
-                }
-
-                return response.json();
-            })
-            .then(setData)
-            .catch((err) => setError(err.message));
-
-    }, []);
-
-
-    if (error) {
-        return <p className="error">{error}</p>;
-    }
-
+function ExplanationContent({
+    data
+}) {
 
     if (!data) {
-        return <LoadingState text="Loading analytics..." />;
+        return (
+            <p className="empty-message">
+                No explanation available.
+            </p>
+        );
     }
 
 
-    const total = data.total_transactions || 1;
+    if (Array.isArray(data)) {
+
+        return (
+
+            <ul className="explanation-list">
+
+                {data.map(
+                    (item, index) => (
+
+                        <li
+                            key={index}
+                        >
+                            {
+                                typeof item ===
+                                "object"
+                                    ? JSON.stringify(
+                                        item
+                                    )
+                                    : String(
+                                        item
+                                    )
+                            }
+                        </li>
+
+                    )
+                )}
+
+            </ul>
+
+        );
+    }
+
+
+    if (
+        typeof data ===
+        "object"
+    ) {
+
+        return (
+
+            <div className="explanation-grid">
+
+                {Object.entries(
+                    data
+                ).map(
+                    ([key, value]) => (
+
+                        <div
+                            className="explanation-item"
+                            key={key}
+                        >
+
+                            <span>
+                                {key
+                                    .replace(
+                                        /_/g,
+                                        " "
+                                    )
+                                    .toUpperCase()}
+                            </span>
+
+                            <strong>
+                                {
+                                    typeof value ===
+                                    "object"
+                                        ? JSON.stringify(
+                                            value
+                                        )
+                                        : String(
+                                            value
+                                        )
+                                }
+                            </strong>
+
+                        </div>
+
+                    )
+                )}
+
+            </div>
+
+        );
+    }
+
+
+    return (
+        <p>
+            {String(data)}
+        </p>
+    );
+}
+
+
+// =========================================================
+// ANALYTICS PAGE
+// =========================================================
+
+function AnalyticsPage({
+    transactions,
+    statistics,
+    loading,
+    formatCurrency
+}) {
+
+    const fraudByCountry =
+        useMemo(() => {
+
+            const countries =
+                {};
+
+            transactions
+                .filter(
+                    (transaction) =>
+                        transaction.is_fraud === 1
+                )
+                .forEach(
+                    (transaction) => {
+
+                        const country =
+                            transaction.country;
+
+                        countries[country] =
+                            (countries[country] ||
+                                0) + 1;
+                    }
+                );
+
+            return Object.entries(
+                countries
+            )
+                .sort(
+                    (a, b) =>
+                        b[1] - a[1]
+                )
+                .slice(0, 5);
+
+        }, [
+            transactions
+        ]);
+
+
+    if (loading) {
+
+        return (
+            <div className="loading-card">
+                Loading analytics...
+            </div>
+        );
+    }
 
 
     return (
 
-        <section>
+        <div className="page">
 
-            <p className="eyebrow">
-                ANALYTICS
-            </p>
+            <section className="page-intro">
 
-            <h2 className="page-title">
-                Risk trends
-            </h2>
-
-
-            <div className="panel">
-
-                <p className="section-label">
-                    RISK COUNTS
+                <p className="eyebrow">
+                    FRAUD INTELLIGENCE
                 </p>
 
-                {["HIGH", "MEDIUM", "LOW"].map((level) => (
+                <h3>
+                    Risk patterns across
+                    transactions.
+                </h3>
 
-                    <DistributionBar
-                        key={level}
-                        label={level}
-                        value={
-                            Math.round(
-                                (data.counts?.[level] || 0)
-                                / total
-                                * 1000
-                            ) / 10
-                        }
-                        tone={level.toLowerCase()}
-                    />
-
-                ))}
-
-            </div>
+            </section>
 
 
-            <div className="details-grid">
+            <section className="analytics-grid">
 
-                <div className="panel">
+                <StatCard
+                    label="TOTAL ANALYZED"
+                    value={
+                        statistics.total
+                    }
+                />
 
-                    <p className="section-label">
-                        FLAGGED REASONS
-                    </p>
+                <StatCard
+                    label="HIGH RISK"
+                    value={
+                        statistics.fraudCount
+                    }
+                />
 
-                    {(data.flagged_reasons || []).map((item) => (
+                <StatCard
+                    label="NORMAL ACTIVITY"
+                    value={
+                        statistics.safeCount
+                    }
+                />
 
-                        <div
-                            className="metric-row"
-                            key={item.reason}
-                        >
+                <StatCard
+                    label="PAYMENT VOLUME"
+                    value={
+                        formatCurrency(
+                            statistics.totalAmount
+                        )
+                    }
+                />
 
-                            <span>{item.reason}</span>
-
-                            <strong>
-                                {formatNumber(item.count)}
-                            </strong>
-
-                        </div>
-
-                    ))}
-
-                </div>
-
-
-                <div className="panel">
-
-                    <p className="section-label">
-                        AVERAGE RISK BY CATEGORY
-                    </p>
-
-                    {(data.categories || []).map((item) => (
-
-                        <div
-                            className="metric-row"
-                            key={item.category}
-                        >
-
-                            <span>{item.category}</span>
-
-                            <strong>
-                                {item.avg_risk}
-                            </strong>
-
-                        </div>
-
-                    ))}
-
-                </div>
-
-            </div>
-
-        </section>
-
-    );
-}
+            </section>
 
 
-function SettingsPage() {
+            <section className="panel">
 
-    return (
+                <p className="section-label">
+                    GEOGRAPHIC RISK
+                </p>
 
-        <section>
-
-            <p className="eyebrow">
-                SETTINGS
-            </p>
-
-            <h2 className="page-title">
-                Platform configuration
-            </h2>
+                <h3>
+                    Countries with flagged
+                    activity
+                </h3>
 
 
-            <div className="panel">
+                <div className="country-list">
 
-                <div className="metric-row">
-                    <span>Dataset</span>
-                    <strong>data/raw/transactions.csv</strong>
-                </div>
+                    {fraudByCountry.map(
+                        ([country, count]) => (
 
-                <div className="metric-row">
-                    <span>Model</span>
-                    <strong>Random Forest risk engine</strong>
-                </div>
+                            <div
+                                className="country-row"
+                                key={country}
+                            >
 
-                <div className="metric-row">
-                    <span>Explanations</span>
-                    <strong>Human-readable signal layer</strong>
-                </div>
+                                <span>
+                                    {country}
+                                </span>
 
-                <div className="metric-row">
-                    <span>Investigate API</span>
-                    <strong>/api/investigate/{"{id}"}</strong>
-                </div>
+                                <strong>
+                                    {
+                                        count
+                                    } flagged
+                                </strong>
 
-            </div>
+                            </div>
 
-        </section>
-
-    );
-}
+                        )
+                    )}
 
 
-function TransactionTable({ rows, onOpen }) {
+                    {fraudByCountry.length ===
+                    0 && (
 
-    return (
-
-        <div className="table-wrap">
-
-            <table className="tx-table">
-
-                <thead>
-
-                    <tr>
-                        <th>Transaction</th>
-                        <th>Amount</th>
-                        <th>Customer</th>
-                        <th>Risk</th>
-                        <th>Status</th>
-                        <th>Reason</th>
-                    </tr>
-
-                </thead>
-
-                <tbody>
-
-                    {rows.length === 0 && (
-
-                        <tr>
-                            <td colSpan={6}>
-                                No transactions in this view.
-                            </td>
-                        </tr>
+                        <p className="empty-message">
+                            No flagged activity
+                            found.
+                        </p>
 
                     )}
 
-                    {rows.map((row) => (
+                </div>
 
-                        <tr
-                            key={row.transaction_id}
-                            onClick={() =>
-                                onOpen(row.transaction_id)
-                            }
-                        >
-
-                            <td>
-                                <code>
-                                    {shortId(row.transaction_id)}
-                                </code>
-                            </td>
-
-                            <td>
-                                ₹
-                                {Number(row.amount || 0)
-                                    .toLocaleString("en-IN")}
-                            </td>
-
-                            <td>{row.customer_id}</td>
-
-                            <td>
-                                <span
-                                    className={`risk-badge ${String(
-                                        row.risk_level || ""
-                                    ).toLowerCase()}`}
-                                >
-                                    {row.risk_level}
-                                </span>
-                            </td>
-
-                            <td>{row.status}</td>
-
-                            <td>{row.reason || "—"}</td>
-
-                        </tr>
-
-                    ))}
-
-                </tbody>
-
-            </table>
+            </section>
 
         </div>
-
     );
-}
-
-
-function InvestigationPanel({ data }) {
-
-    const transaction = data.transaction || {};
-
-    const riskLevel = String(
-        data.risk_level || "UNKNOWN"
-    ).toLowerCase();
-
-    const riskScore = Number(data.risk_score || 0);
-
-    const explanations = Array.isArray(data.explanations)
-        ? data.explanations
-        : [];
-
-    const comparisons = Array.isArray(data.behavior_comparison)
-        ? data.behavior_comparison
-        : [];
-
-
-    return (
-
-        <section className="investigation">
-
-            <div className="transaction-header">
-
-                <div>
-
-                    <p className="section-label">
-                        INVESTIGATION RESULT
-                    </p>
-
-                    <h2>
-                        ₹
-                        {Number(
-                            transaction.amount || 0
-                        ).toLocaleString("en-IN")}
-                    </h2>
-
-                    <code>
-                        {data.transaction_id}
-                    </code>
-
-                </div>
-
-                <div className={`risk-badge ${riskLevel}`}>
-                    {data.risk_level} RISK
-                </div>
-
-            </div>
-
-
-            <div className="risk-grid">
-
-                <div className="risk-card">
-
-                    <p>
-                        RISK SCORE
-                    </p>
-
-                    <div className="risk-score">
-
-                        {riskScore.toFixed(0)}
-
-                        <span>
-                            /100
-                        </span>
-
-                    </div>
-
-                    <div className="risk-bar">
-
-                        <div
-                            className={`risk-fill ${riskLevel}`}
-                            style={{
-                                width: `${Math.min(riskScore, 100)}%`
-                            }}
-                        />
-
-                    </div>
-
-                </div>
-
-
-                <div className="transaction-card">
-
-                    <p>
-                        TRANSACTION
-                    </p>
-
-                    <strong>
-
-                        {transaction.payment_method || "Unknown"}
-
-                    </strong>
-
-                    <span>
-
-                        {transaction.merchant_category ||
-                            "Unknown"}
-
-                    </span>
-
-                </div>
-
-
-                <div className="action-card">
-
-                    <p>
-                        AI RECOMMENDATION
-                    </p>
-
-                    <strong>
-                        {formatAction(data.recommended_action)}
-                    </strong>
-
-                    <span>
-
-                        Multiple independent behavioral
-                        signals indicate elevated fraud risk
-                        when several alerts fire together.
-
-                    </span>
-
-                </div>
-
-            </div>
-
-
-            <div className="details-grid">
-
-                <div className="panel">
-
-                    <div className="panel-header">
-
-                        <div>
-
-                            <p className="section-label">
-                                WHY WAS THIS FLAGGED?
-                            </p>
-
-                            <h3>
-                                Human-readable evidence
-                            </h3>
-
-                        </div>
-
-                        <span className="ai-tag">
-                            AI
-                        </span>
-
-                    </div>
-
-                    <div className="explanations">
-
-                        {explanations.length === 0 && (
-
-                            <p className="no-data">
-                                No elevated behavioral
-                                signals were returned.
-                            </p>
-
-                        )}
-
-                        {explanations.map((item, index) => (
-
-                            <div
-                                className="explanation"
-                                key={index}
-                            >
-
-                                <div className="reason-index">
-                                    {String(index + 1).padStart(2, "0")}
-                                </div>
-
-                                <div>
-
-                                    <strong>
-                                        {item.title}
-                                    </strong>
-
-                                    <p>
-                                        {item.message}
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                        ))}
-
-                    </div>
-
-                </div>
-
-
-                <div className="panel">
-
-                    <div className="panel-header">
-
-                        <div>
-
-                            <p className="section-label">
-                                CUSTOMER BEHAVIOR
-                            </p>
-
-                            <h3>
-                                Normal vs current
-                            </h3>
-
-                        </div>
-
-                    </div>
-
-                    <div className="comparison">
-
-                        <div className="comparison-row header">
-                            <div>SIGNAL</div>
-                            <div>NORMAL</div>
-                            <div>CURRENT</div>
-                        </div>
-
-                        {comparisons.length === 0 && (
-
-                            <p className="no-data">
-                                Behavioral comparison
-                                unavailable.
-                            </p>
-
-                        )}
-
-                        {comparisons.map((item, index) => (
-
-                            <div
-                                className="comparison-row"
-                                key={index}
-                            >
-
-                                <div>
-                                    {item.signal || "Signal"}
-                                </div>
-
-                                <div>
-                                    {item.normal || "—"}
-                                </div>
-
-                                <div>
-                                    {item.current || "—"}
-                                </div>
-
-                            </div>
-
-                        ))}
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            <div className="transaction-info">
-
-                <div>
-                    <span>CUSTOMER</span>
-                    <strong>
-                        {transaction.customer_id || "Unknown"}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>LOCATION</span>
-                    <strong>
-                        {transaction.country || "Unknown"}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>MERCHANT</span>
-                    <strong>
-                        {transaction.merchant_category || "Unknown"}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>TIMESTAMP</span>
-                    <strong>
-                        {transaction.timestamp || "Unknown"}
-                    </strong>
-                </div>
-
-            </div>
-
-        </section>
-
-    );
-}
-
-
-function StatCard({ label, value, tone }) {
-
-    return (
-
-        <div className={`stat-card ${tone || ""}`}>
-
-            <p>{label}</p>
-
-            <strong>{value}</strong>
-
-        </div>
-
-    );
-}
-
-
-function DistributionBar({ label, value, tone }) {
-
-    return (
-
-        <div className="dist-row">
-
-            <span>{label}</span>
-
-            <div className="dist-track">
-
-                <div
-                    className={`dist-fill ${tone}`}
-                    style={{ width: `${value || 0}%` }}
-                />
-
-            </div>
-
-            <strong>{value}%</strong>
-
-        </div>
-
-    );
-}
-
-
-function LoadingState({ text }) {
-
-    return (
-
-        <section className="loading-state">
-
-            <div className="loader"></div>
-
-            <h3>
-                Working
-            </h3>
-
-            <p>{text}</p>
-
-        </section>
-
-    );
-}
-
-
-function formatAction(action) {
-
-    if (action === "MANUAL_REVIEW") {
-        return "Manual Review";
-    }
-
-    if (action === "STEP_UP_VERIFICATION") {
-        return "Step-up Verification";
-    }
-
-    if (action === "ALLOW") {
-        return "Allow Transaction";
-    }
-
-    if (!action) {
-        return "Review Required";
-    }
-
-    return action
-        .replaceAll("_", " ")
-        .replace(
-            /\b\w/g,
-            (letter) => letter.toUpperCase()
-        );
-}
-
-
-function formatNumber(value) {
-
-    return Number(value || 0).toLocaleString("en-IN");
-}
-
-
-function shortId(id) {
-
-    const value = String(id || "");
-
-    if (value.length <= 12) {
-        return value;
-    }
-
-    return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
 
