@@ -490,13 +490,23 @@ def primary_reason_for_row(row):
     return "Behaviour Pattern"
 
 
-def get_priority_queue(limit=30):
+def get_priority_queue(limit=30, max_per_reason=None):
     """
     Rank transactions the way an investigator's queue would: worst risk
     first, with a short human-readable reason and a relative timestamp.
+
+    The raw data has a large cluster of transactions that all trip the
+    exact same combination of rules (new device + new location + odd
+    hour + new category) and saturate the score at 100 — sorting by
+    score alone would flood the queue with dozens of near-identical
+    "New Device" rows and bury every other case type. We cap how many
+    queue slots any single reason can take so investigators see a
+    genuinely varied worklist, still ordered worst-first within that
+    constraint.
     """
 
-    import datetime
+    if max_per_reason is None:
+        max_per_reason = max(3, limit // 5)
 
     df = MODEL_DATA[
         MODEL_DATA["risk_level"].isin(["HIGH", "MEDIUM"])
@@ -505,13 +515,47 @@ def get_priority_queue(limit=30):
     if df.empty:
         df = MODEL_DATA.copy()
 
-    df = df.sort_values("risk_score", ascending=False).head(limit)
+    df = df.sort_values("risk_score", ascending=False)
+
+    df["reason"] = df.apply(primary_reason_for_row, axis=1)
+
+    selected = []
+    reason_counts = {}
+    overflow = []
+
+    for _, row in df.iterrows():
+
+        reason = row["reason"]
+        count = reason_counts.get(reason, 0)
+
+        if count >= max_per_reason:
+            overflow.append(row)
+            continue
+
+        selected.append(row)
+        reason_counts[reason] = count + 1
+
+        if len(selected) >= limit:
+            break
+
+    # If capping reasons left us short (e.g. almost everything shares
+    # one reason), backfill from the overflow pile so we still return
+    # `limit` items.
+    if len(selected) < limit:
+        for row in overflow:
+            selected.append(row)
+            if len(selected) >= limit:
+                break
+
+    selected.sort(key=lambda row: row["risk_score"], reverse=True)
+
+    import datetime
 
     now = datetime.datetime.now()
 
     items = []
 
-    for _, row in df.iterrows():
+    for row in selected:
 
         timestamp = row["timestamp"]
 
@@ -535,7 +579,7 @@ def get_priority_queue(limit=30):
             "amount": float(row["amount"]),
             "risk_score": round(float(row["risk_score"]), 1),
             "risk_level": row["risk_level"],
-            "reason": primary_reason_for_row(row),
+            "reason": row["reason"],
             "timestamp": str(timestamp),
             "time_ago": time_ago,
         })

@@ -339,6 +339,33 @@ def generate_explanations(
         key=lambda item: severity_rank.get(item["severity"], 3)
     )
 
+    MAX_VISIBLE = 4
+
+    if len(explanations) > MAX_VISIBLE:
+        visible = explanations[:MAX_VISIBLE]
+        hidden = explanations[MAX_VISIBLE:]
+
+        hidden_titles = [item["title"] for item in hidden]
+
+        if len(hidden_titles) == 1:
+            summary = hidden_titles[0]
+        else:
+            summary = (
+                f"{', '.join(hidden_titles[:-1])}, and {hidden_titles[-1]}"
+            )
+
+        visible.append({
+            "feature": "additional_signals",
+            "severity": "LOW",
+            "title": f"{len(hidden)} additional weaker signal(s)",
+            "message": (
+                f"These also nudged the score but are minor on their "
+                f"own: {summary}."
+            ),
+        })
+
+        explanations = visible
+
     return explanations
 
 
@@ -347,16 +374,24 @@ def _driver_sentences(model_drivers, limit=3):
         return ""
 
     parts = []
-    for driver in model_drivers[:limit]:
+    for driver in model_drivers:
+        if driver.get("feature") == "behavior_deviation_score":
+            continue
         if driver.get("delta", 0) <= 0:
             continue
         label = driver.get("label") or driver.get("feature")
         parts.append(label)
+        if len(parts) >= limit:
+            break
 
     if not parts:
-        for driver in model_drivers[:limit]:
+        for driver in model_drivers:
+            if driver.get("feature") == "behavior_deviation_score":
+                continue
             label = driver.get("label") or driver.get("feature")
             parts.append(label)
+            if len(parts) >= limit:
+                break
 
     if not parts:
         return ""
@@ -372,6 +407,8 @@ def _unused_driver_sentences(model_drivers, used_features):
     for driver in model_drivers:
         feature = driver.get("feature")
         if feature in used_features or feature == "model_combination":
+            continue
+        if feature == "behavior_deviation_score":
             continue
         if driver.get("delta", 0) <= 0:
             continue

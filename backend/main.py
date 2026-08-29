@@ -16,6 +16,11 @@ from backend.customer_profile import (
     get_customer_timeline,
 )
 
+from backend.dashboard import (
+    get_dashboard,
+    get_dashboard_summary,
+)
+
 from backend import case_store
 
 
@@ -408,4 +413,24 @@ def customer_timeline(
         "success": True,
         "count": len(timeline),
         "timeline": timeline,
+    }
+
+
+# ============================================================
+# DASHBOARD — handled / reviewed transactions
+# ============================================================
+
+@app.get(
+    "/api/dashboard"
+)
+def dashboard(status: str = "all"):
+
+    items = get_dashboard(status)
+    summary = get_dashboard_summary()
+
+    return {
+        "success": True,
+        "count": len(items),
+        "summary": summary,
+        "cases": items,
     }

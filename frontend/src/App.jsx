@@ -35,6 +35,20 @@ function formatClock(timestamp) {
 }
 
 
+function formatDateTime(timestamp) {
+    if (!timestamp) return "—";
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return timestamp;
+    return date.toLocaleString("en-IN", {
+        day: "numeric",
+        month: "short",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+    });
+}
+
+
 function bandForScore(score) {
     if (score >= 85) return "critical";
     if (score >= 70) return "high";
@@ -71,11 +85,18 @@ async function api(path, options) {
 
 function App() {
 
+    const [page, setPage] = useState("investigate");
+
     const [listTab, setListTab] = useState("queue");
     const [queue, setQueue] = useState([]);
     const [recent, setRecent] = useState([]);
     const [listLoading, setListLoading] = useState(true);
     const [listError, setListError] = useState("");
+
+    const [dashboardCases, setDashboardCases] = useState([]);
+    const [dashboardSummary, setDashboardSummary] = useState(null);
+    const [dashboardLoading, setDashboardLoading] = useState(false);
+    const [dashboardFilter, setDashboardFilter] = useState("all");
 
     const [searchValue, setSearchValue] = useState("");
 
@@ -110,6 +131,20 @@ function App() {
     }, []);
 
 
+    const loadDashboard = useCallback(async (statusFilter) => {
+        setDashboardLoading(true);
+        try {
+            const data = await api(`/api/dashboard?status=${statusFilter}`);
+            setDashboardCases(data.cases || []);
+            setDashboardSummary(data.summary || null);
+        } catch (err) {
+            setListError(err.message || "Unable to load the dashboard.");
+        } finally {
+            setDashboardLoading(false);
+        }
+    }, []);
+
+
     useEffect(() => {
         (async () => {
             setListLoading(true);
@@ -125,6 +160,12 @@ function App() {
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+
+    useEffect(() => {
+        if (page === "dashboard") loadDashboard(dashboardFilter);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [page, dashboardFilter]);
 
 
     const loadCustomerContext = useCallback(async (customerId) => {
@@ -168,15 +209,22 @@ function App() {
 
 
     useEffect(() => {
-        if (selectedId) investigate(selectedId);
+        if (selectedId && page === "investigate") investigate(selectedId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedId]);
+    }, [selectedId, page]);
 
 
     function handleSearchSubmit(event) {
         event.preventDefault();
         if (!searchValue.trim()) return;
+        setPage("investigate");
         setSelectedId(searchValue.trim());
+    }
+
+
+    function goToTransaction(id) {
+        setPage("investigate");
+        setSelectedId(id);
     }
 
 
@@ -241,6 +289,21 @@ function App() {
                     </div>
                 </div>
 
+                <nav className="page-nav">
+                    <button
+                        className={page === "investigate" ? "active" : ""}
+                        onClick={() => setPage("investigate")}
+                    >
+                        Investigate
+                    </button>
+                    <button
+                        className={page === "dashboard" ? "active" : ""}
+                        onClick={() => setPage("dashboard")}
+                    >
+                        Dashboard
+                    </button>
+                </nav>
+
                 <form className="global-search" onSubmit={handleSearchSubmit}>
                     <input
                         value={searchValue}
@@ -256,105 +319,118 @@ function App() {
                 </div>
             </header>
 
-            <div className="workspace">
+            {page === "investigate" && (
+                <div className="workspace">
 
-                <aside className="queue-panel">
+                    <aside className="queue-panel">
 
-                    <div className="list-tabs">
-                        <button
-                            className={listTab === "queue" ? "active" : ""}
-                            onClick={() => setListTab("queue")}
-                        >
-                            Priority Queue
-                            {queue.length > 0 && (
-                                <span className="tab-count">{queue.length}</span>
+                        <div className="list-tabs">
+                            <button
+                                className={listTab === "queue" ? "active" : ""}
+                                onClick={() => setListTab("queue")}
+                            >
+                                Priority Queue
+                                {queue.length > 0 && (
+                                    <span className="tab-count">{queue.length}</span>
+                                )}
+                            </button>
+                            <button
+                                className={listTab === "recent" ? "active" : ""}
+                                onClick={() => setListTab("recent")}
+                            >
+                                All Activity
+                            </button>
+                        </div>
+
+                        <div className="queue-list">
+
+                            {listLoading && (
+                                <div className="list-loading">
+                                    <div className="loader small"></div>
+                                </div>
                             )}
-                        </button>
-                        <button
-                            className={listTab === "recent" ? "active" : ""}
-                            onClick={() => setListTab("recent")}
-                        >
-                            All Activity
-                        </button>
-                    </div>
 
-                    <div className="queue-list">
+                            {!listLoading && listError && (
+                                <p className="list-error">{listError}</p>
+                            )}
 
-                        {listLoading && (
-                            <div className="list-loading">
-                                <div className="loader small"></div>
-                            </div>
+                            {!listLoading && listTab === "queue" && (
+                                <QueueGroups
+                                    items={queue}
+                                    selectedId={selectedId}
+                                    onSelect={goToTransaction}
+                                />
+                            )}
+
+                            {!listLoading && listTab === "recent" && (
+                                <RecentList
+                                    items={recent}
+                                    selectedId={selectedId}
+                                    onSelect={goToTransaction}
+                                />
+                            )}
+
+                        </div>
+
+                    </aside>
+
+                    <main className="detail-panel">
+
+                        {!selectedId && !invLoading && (
+                            <section className="empty-state">
+                                <div className="empty-icon">◈</div>
+                                <h3>Ready for investigation</h3>
+                                <p>
+                                    Pick a transaction from the queue, or search for
+                                    a transaction or customer ID above.
+                                </p>
+                            </section>
                         )}
 
-                        {!listLoading && listError && (
-                            <p className="list-error">{listError}</p>
+                        {invLoading && (
+                            <section className="loading-state">
+                                <div className="loader"></div>
+                                <h3>AI investigation in progress</h3>
+                                <p>
+                                    Analyzing transaction behavior, risk signals
+                                    and historical patterns...
+                                </p>
+                            </section>
                         )}
 
-                        {!listLoading && listTab === "queue" && (
-                            <QueueGroups
-                                items={queue}
-                                selectedId={selectedId}
-                                onSelect={setSelectedId}
+                        {!invLoading && invError && (
+                            <section className="empty-state">
+                                <div className="empty-icon">!</div>
+                                <h3>Couldn't load that transaction</h3>
+                                <p>{invError}</p>
+                            </section>
+                        )}
+
+                        {!invLoading && !invError && investigation && (
+                            <InvestigationView
+                                data={investigation}
+                                profile={profile}
+                                timeline={timeline}
+                                onStatusChange={handleStatusChange}
+                                onSaveNote={handleSaveNote}
                             />
                         )}
 
-                        {!listLoading && listTab === "recent" && (
-                            <RecentList
-                                items={recent}
-                                selectedId={selectedId}
-                                onSelect={setSelectedId}
-                            />
-                        )}
+                    </main>
 
-                    </div>
+                </div>
+            )}
 
-                </aside>
-
-                <main className="detail-panel">
-
-                    {!selectedId && !invLoading && (
-                        <section className="empty-state">
-                            <div className="empty-icon">◈</div>
-                            <h3>Ready for investigation</h3>
-                            <p>
-                                Pick a transaction from the queue, or search for
-                                a transaction or customer ID above.
-                            </p>
-                        </section>
-                    )}
-
-                    {invLoading && (
-                        <section className="loading-state">
-                            <div className="loader"></div>
-                            <h3>AI investigation in progress</h3>
-                            <p>
-                                Analyzing transaction behavior, risk signals
-                                and historical patterns...
-                            </p>
-                        </section>
-                    )}
-
-                    {!invLoading && invError && (
-                        <section className="empty-state">
-                            <div className="empty-icon">!</div>
-                            <h3>Couldn't load that transaction</h3>
-                            <p>{invError}</p>
-                        </section>
-                    )}
-
-                    {!invLoading && !invError && investigation && (
-                        <InvestigationView
-                            data={investigation}
-                            profile={profile}
-                            timeline={timeline}
-                            onStatusChange={handleStatusChange}
-                            onSaveNote={handleSaveNote}
-                        />
-                    )}
-
-                </main>
-
-            </div>
+            {page === "dashboard" && (
+                <Dashboard
+                    cases={dashboardCases}
+                    summary={dashboardSummary}
+                    loading={dashboardLoading}
+                    filter={dashboardFilter}
+                    onFilterChange={setDashboardFilter}
+                    onSelect={goToTransaction}
+                />
+            )}
 
         </div>
     );
@@ -496,6 +572,127 @@ function SignalBars({ score, level }) {
 
 
 
+// ============================================================
+// DASHBOARD — handled / reviewed transactions
+// ============================================================
+
+const DASHBOARD_FILTERS = [
+    { key: "all", label: "All Handled" },
+    { key: "safe", label: "Marked Safe" },
+    { key: "needs_review", label: "Needs Review" },
+    { key: "confirmed_fraud", label: "Confirmed Fraud" },
+];
+
+
+function Dashboard({ cases, summary, loading, filter, onFilterChange, onSelect }) {
+
+    return (
+        <main className="dashboard-page">
+
+            <div className="dashboard-header">
+                <div>
+                    <p className="section-label">INVESTIGATOR DASHBOARD</p>
+                    <h2>Handled Transactions</h2>
+                    <p className="dashboard-subtitle">
+                        Every transaction a decision has already been made
+                        on, in one place.
+                    </p>
+                </div>
+            </div>
+
+            <div className="dashboard-stats">
+                <div className="dashboard-stat total">
+                    <span>Total Handled</span>
+                    <strong>{summary ? summary.total_handled : "—"}</strong>
+                </div>
+                <div className="dashboard-stat safe">
+                    <span>✓ Marked Safe</span>
+                    <strong>{summary ? summary.safe : "—"}</strong>
+                </div>
+                <div className="dashboard-stat needs_review">
+                    <span>⚠ Needs Review</span>
+                    <strong>{summary ? summary.needs_review : "—"}</strong>
+                </div>
+                <div className="dashboard-stat confirmed_fraud">
+                    <span>🚨 Confirmed Fraud</span>
+                    <strong>{summary ? summary.confirmed_fraud : "—"}</strong>
+                </div>
+            </div>
+
+            <div className="dashboard-filters">
+                {DASHBOARD_FILTERS.map((item) => (
+                    <button
+                        key={item.key}
+                        className={filter === item.key ? "active" : ""}
+                        onClick={() => onFilterChange(item.key)}
+                    >
+                        {item.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="dashboard-list">
+
+                {loading && (
+                    <div className="list-loading">
+                        <div className="loader small"></div>
+                    </div>
+                )}
+
+                {!loading && cases.length === 0 && (
+                    <p className="no-data">
+                        No transactions here yet — decisions you make in
+                        Investigate will show up on this dashboard.
+                    </p>
+                )}
+
+                {!loading && cases.length > 0 && (
+                    <div className="dashboard-table">
+                        <div className="dashboard-table-head">
+                            <div>Transaction</div>
+                            <div>Customer</div>
+                            <div>Amount</div>
+                            <div>Risk</div>
+                            <div>Decision</div>
+                            <div>Notes</div>
+                            <div>Reviewed</div>
+                        </div>
+
+                        {cases.map((item) => (
+                            <button
+                                key={item.transaction_id}
+                                className="dashboard-row"
+                                onClick={() => onSelect(item.transaction_id)}
+                            >
+                                <code>{shortId(item.transaction_id)}</code>
+                                <span>{item.customer_id}</span>
+                                <span className="mono">{formatINR(item.amount)}</span>
+                                <span className="mono">{item.risk_score}</span>
+                                <span className={`case-pill ${item.status}`}>
+                                    {STATUS_META[item.status]?.icon}{" "}
+                                    {item.status_label}
+                                </span>
+                                <span className="dashboard-note">
+                                    {item.note_count > 0
+                                        ? item.last_note
+                                        : "—"}
+                                </span>
+                                <span className="dashboard-time">
+                                    {formatDateTime(item.updated_at)}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+            </div>
+
+        </main>
+    );
+}
+
+
+
 function InvestigationView({ data, profile, timeline, onStatusChange, onSaveNote }) {
 
     const transaction = data.transaction || {};
@@ -548,6 +745,8 @@ function InvestigationView({ data, profile, timeline, onStatusChange, onSaveNote
     return (
         <section className="investigation">
 
+            {/* ============ 0. IDENTITY STRIP ============ */}
+
             <div className="transaction-header">
                 <div>
                     <p className="section-label">INVESTIGATION RESULT</p>
@@ -568,222 +767,34 @@ function InvestigationView({ data, profile, timeline, onStatusChange, onSaveNote
                 </div>
             </div>
 
-            <div className="risk-grid">
-
-                <div className="risk-card">
-                    <p>AI RISK SCORE</p>
-
-                    <div className="risk-score">
-                        {riskScore.toFixed(1)}
-                        <span>/100</span>
-                    </div>
-
-                    <SignalBars score={riskScore} level={riskLevel} />
-
-                    {scoreBreakdown.length > 0 && (
-                        <div className="score-breakdown">
-                            <p className="score-breakdown-label">
-                                Main contributing signals
-                            </p>
-                            {scoreBreakdown.map((driver, index) => (
-                                <div className="score-driver" key={index}>
-                                    <span
-                                        className={`driver-dot ${driver.weight.toLowerCase()}`}
-                                    />
-                                    <span className="driver-label">{driver.label}</span>
-                                    <span className="driver-points">
-                                        +{driver.points}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+            <div className="transaction-info">
+                <div>
+                    <span>CUSTOMER</span>
+                    <strong>{transaction.customer_id || "Unknown"}</strong>
                 </div>
-
-                <div className="transaction-card">
-                    <p>TRANSACTION</p>
-                    <strong>{formatINR(transaction.amount)}</strong>
-                    <span>
-                        {transaction.payment_method || "Unknown"}
-                        {" • "}
-                        {transaction.merchant_category || "Unknown"}
-                    </span>
+                <div>
+                    <span>LOCATION</span>
+                    <strong>
+                        {transaction.country || transaction.ip_country || "Unknown"}
+                    </strong>
                 </div>
-
-                <div className="action-card">
-                    <p>RECOMMENDED ACTION</p>
-                    <strong>{formatAction(data.recommended_action)}</strong>
+                <div>
+                    <span>MERCHANT</span>
+                    <strong>{transaction.merchant_category || "Unknown"}</strong>
                 </div>
-
+                <div>
+                    <span>TIMESTAMP</span>
+                    <strong>{transaction.timestamp || "Unknown"}</strong>
+                </div>
             </div>
 
-            <div className="decision-panel">
+            {/* ============ 1. CUSTOMER DATA ============ */}
 
-                <div className="decision-buttons">
-                    <p className="section-label">INVESTIGATOR DECISION</p>
-                    <div className="decision-row">
-                        <button
-                            className={`decision-btn safe ${
-                                caseData.status === "safe" ? "active" : ""
-                            }`}
-                            disabled={savingStatus}
-                            onClick={() => submitStatus("safe")}
-                        >
-                            ✓ Mark Safe
-                        </button>
-                        <button
-                            className={`decision-btn needs_review ${
-                                caseData.status === "needs_review" ? "active" : ""
-                            }`}
-                            disabled={savingStatus}
-                            onClick={() => submitStatus("needs_review")}
-                        >
-                            ⚠ Needs Review
-                        </button>
-                        <button
-                            className={`decision-btn confirmed_fraud ${
-                                caseData.status === "confirmed_fraud" ? "active" : ""
-                            }`}
-                            disabled={savingStatus}
-                            onClick={() => submitStatus("confirmed_fraud")}
-                        >
-                            🚨 Confirm Fraud
-                        </button>
-                    </div>
+            <div className="flow-step">
+                <div className="flow-step-label">
+                    <span className="flow-number">1</span>
+                    <h3>Who is this customer?</h3>
                 </div>
-
-                <div className="notes-block">
-                    <p className="section-label">INVESTIGATION NOTES</p>
-
-                    {caseData.notes && caseData.notes.length > 0 && (
-                        <div className="notes-list">
-                            {caseData.notes.map((note, index) => (
-                                <div className="note" key={index}>
-                                    <p>{note.text}</p>
-                                    <span>
-                                        {new Date(note.created_at).toLocaleString(
-                                            "en-IN",
-                                            {
-                                                day: "numeric",
-                                                month: "short",
-                                                hour: "numeric",
-                                                minute: "2-digit",
-                                                hour12: true,
-                                            }
-                                        )}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    <form className="note-form" onSubmit={submitNote}>
-                        <textarea
-                            value={noteDraft}
-                            onChange={(event) => setNoteDraft(event.target.value)}
-                            placeholder="e.g. Customer usually transacts between 10 AM and 6 PM. This one is at 11 PM from a new device."
-                            rows={3}
-                        />
-                        <button type="submit" disabled={savingNote || !noteDraft.trim()}>
-                            {savingNote ? "Saving..." : "Save Note"}
-                        </button>
-                    </form>
-                </div>
-
-            </div>
-
-            <div className="details-grid">
-
-                <div className="panel">
-                    <div className="panel-header">
-                        <div>
-                            <p className="section-label">MODEL EVIDENCE</p>
-                            <h3>Why was this flagged?</h3>
-                        </div>
-                        <span className="ai-tag">AI</span>
-                    </div>
-
-                    {flagSummary && <p className="flag-summary">{flagSummary}</p>}
-
-                    <div className="explanations">
-                        {explanations.length === 0 && (
-                            <p className="no-data">
-                                {riskLevel === "low"
-                                    ? "Nothing unusual stood out against this customer's baseline. The model is not treating this as a likely fraud case."
-                                    : "The model raised risk from a mix of weaker signals rather than one obvious red flag. Check the behaviour comparison for what still differs from baseline."}
-                            </p>
-                        )}
-
-                        {explanations.map((item, index) => (
-                            <div className="explanation" key={index}>
-                                <div
-                                    className={`severity ${String(
-                                        item.severity || "medium"
-                                    ).toLowerCase()}`}
-                                >
-                                    !
-                                </div>
-                                <div>
-                                    <strong>{item.title}</strong>
-                                    <p>{item.message}</p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="panel">
-                    <div className="panel-header">
-                        <div>
-                            <p className="section-label">BEHAVIORAL ANALYSIS</p>
-                            <h3>Customer vs this payment</h3>
-                        </div>
-                    </div>
-
-                    {comparisonSummary && (
-                        <p className="comparison-summary">{comparisonSummary}</p>
-                    )}
-
-                    <div className="comparison">
-                        {comparisons.length === 0 && (
-                            <p className="no-data">
-                                Behavioral comparison unavailable.
-                            </p>
-                        )}
-
-                        {comparisons.length > 0 && (
-                            <div className="comparison-head">
-                                <div>Signal</div>
-                                <div>Usual for this customer</div>
-                                <div>This payment</div>
-                                <div>Result</div>
-                            </div>
-                        )}
-
-                        {comparisons.map((item, index) => {
-                            const status = String(item.status || "NORMAL").toLowerCase();
-                            return (
-                                <div className={`comparison-row ${status}`} key={index}>
-                                    <div className="comparison-signal">
-                                        <strong>{item.signal || "Signal"}</strong>
-                                        {item.insight && <p>{item.insight}</p>}
-                                    </div>
-                                    <div>{item.normal || "—"}</div>
-                                    <div>{item.current || "—"}</div>
-                                    <div>
-                                        <span className={`status-pill ${status}`}>
-                                            {item.status || "NORMAL"}
-                                        </span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-            </div>
-
-            <div className="details-grid">
 
                 <div className="panel">
                     <div className="panel-header">
@@ -828,6 +839,15 @@ function InvestigationView({ data, profile, timeline, onStatusChange, onSaveNote
                             />
                         </div>
                     )}
+                </div>
+            </div>
+
+            {/* ============ 2. THEIR ACTIVITY ============ */}
+
+            <div className="flow-step">
+                <div className="flow-step-label">
+                    <span className="flow-number">2</span>
+                    <h3>What has this customer been doing?</h3>
                 </div>
 
                 <div className="panel">
@@ -881,27 +901,242 @@ function InvestigationView({ data, profile, timeline, onStatusChange, onSaveNote
                         </div>
                     )}
                 </div>
-
             </div>
 
-            <div className="transaction-info">
-                <div>
-                    <span>CUSTOMER</span>
-                    <strong>{transaction.customer_id || "Unknown"}</strong>
+            {/* ============ 3. RISK PROFILE (this transaction's score) ============ */}
+
+            <div className="flow-step">
+                <div className="flow-step-label">
+                    <span className="flow-number">3</span>
+                    <h3>How risky is this specific transaction?</h3>
                 </div>
-                <div>
-                    <span>LOCATION</span>
-                    <strong>
-                        {transaction.country || transaction.ip_country || "Unknown"}
-                    </strong>
+
+                <div className="risk-grid">
+
+                    <div className="risk-card">
+                        <p>AI RISK SCORE</p>
+
+                        <div className="risk-score">
+                            {riskScore.toFixed(1)}
+                            <span>/100</span>
+                        </div>
+
+                        <SignalBars score={riskScore} level={riskLevel} />
+
+                        {scoreBreakdown.length > 0 && (
+                            <div className="score-breakdown">
+                                <p className="score-breakdown-label">
+                                    Main contributing signals
+                                </p>
+                                {scoreBreakdown.map((driver, index) => (
+                                    <div className="score-driver" key={index}>
+                                        <span
+                                            className={`driver-dot ${driver.weight.toLowerCase()}`}
+                                        />
+                                        <span className="driver-label">{driver.label}</span>
+                                        <span className="driver-points">
+                                            +{driver.points}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="transaction-card">
+                        <p>TRANSACTION</p>
+                        <strong>{formatINR(transaction.amount)}</strong>
+                        <span>
+                            {transaction.payment_method || "Unknown"}
+                            {" • "}
+                            {transaction.merchant_category || "Unknown"}
+                        </span>
+                    </div>
+
+                    <div className="action-card">
+                        <p>RECOMMENDED ACTION</p>
+                        <strong>{formatAction(data.recommended_action)}</strong>
+                    </div>
+
                 </div>
-                <div>
-                    <span>MERCHANT</span>
-                    <strong>{transaction.merchant_category || "Unknown"}</strong>
+            </div>
+
+            {/* ============ 4. FLAGGING ============ */}
+
+            <div className="flow-step">
+                <div className="flow-step-label">
+                    <span className="flow-number">4</span>
+                    <h3>Why was it flagged?</h3>
                 </div>
-                <div>
-                    <span>TIMESTAMP</span>
-                    <strong>{transaction.timestamp || "Unknown"}</strong>
+
+                <div className="details-grid">
+
+                    <div className="panel">
+                        <div className="panel-header">
+                            <div>
+                                <p className="section-label">MODEL EVIDENCE</p>
+                                <h3>Why was this flagged?</h3>
+                            </div>
+                            <span className="ai-tag">AI</span>
+                        </div>
+
+                        {flagSummary && <p className="flag-summary">{flagSummary}</p>}
+
+                        <div className="explanations">
+                            {explanations.length === 0 && (
+                                <p className="no-data">
+                                    {riskLevel === "low"
+                                        ? "Nothing unusual stood out against this customer's baseline. The model is not treating this as a likely fraud case."
+                                        : "The model raised risk from a mix of weaker signals rather than one obvious red flag. Check the behaviour comparison for what still differs from baseline."}
+                                </p>
+                            )}
+
+                            {explanations.map((item, index) => {
+                                const isSummary = item.feature === "additional_signals";
+                                return (
+                                    <div
+                                        className={`explanation ${isSummary ? "summary" : ""}`}
+                                        key={index}
+                                    >
+                                        <div
+                                            className={`severity ${String(
+                                                item.severity || "medium"
+                                            ).toLowerCase()}`}
+                                        >
+                                            {isSummary ? "+" : "!"}
+                                        </div>
+                                        <div>
+                                            <strong>{item.title}</strong>
+                                            <p>{item.message}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="panel">
+                        <div className="panel-header">
+                            <div>
+                                <p className="section-label">BEHAVIORAL ANALYSIS</p>
+                                <h3>Customer vs this payment</h3>
+                            </div>
+                        </div>
+
+                        {comparisonSummary && (
+                            <p className="comparison-summary">{comparisonSummary}</p>
+                        )}
+
+                        <div className="comparison">
+                            {comparisons.length === 0 && (
+                                <p className="no-data">
+                                    Behavioral comparison unavailable.
+                                </p>
+                            )}
+
+                            {comparisons.length > 0 && (
+                                <div className="comparison-head">
+                                    <div>Signal</div>
+                                    <div>Usual for this customer</div>
+                                    <div>This payment</div>
+                                    <div>Result</div>
+                                </div>
+                            )}
+
+                            {comparisons.map((item, index) => {
+                                const status = String(item.status || "NORMAL").toLowerCase();
+                                return (
+                                    <div className={`comparison-row ${status}`} key={index}>
+                                        <div className="comparison-signal">
+                                            <strong>{item.signal || "Signal"}</strong>
+                                            {item.insight && <p>{item.insight}</p>}
+                                        </div>
+                                        <div>{item.normal || "—"}</div>
+                                        <div>{item.current || "—"}</div>
+                                        <div>
+                                            <span className={`status-pill ${status}`}>
+                                                {item.status || "NORMAL"}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            {/* ============ 5. INVESTIGATOR DECISION ============ */}
+
+            <div className="flow-step">
+                <div className="flow-step-label">
+                    <span className="flow-number">5</span>
+                    <h3>What's the call?</h3>
+                </div>
+
+                <div className="decision-panel">
+
+                    <div className="decision-buttons">
+                        <p className="section-label">INVESTIGATOR DECISION</p>
+                        <div className="decision-row">
+                            <button
+                                className={`decision-btn safe ${
+                                    caseData.status === "safe" ? "active" : ""
+                                }`}
+                                disabled={savingStatus}
+                                onClick={() => submitStatus("safe")}
+                            >
+                                ✓ Mark Safe
+                            </button>
+                            <button
+                                className={`decision-btn needs_review ${
+                                    caseData.status === "needs_review" ? "active" : ""
+                                }`}
+                                disabled={savingStatus}
+                                onClick={() => submitStatus("needs_review")}
+                            >
+                                ⚠ Needs Review
+                            </button>
+                            <button
+                                className={`decision-btn confirmed_fraud ${
+                                    caseData.status === "confirmed_fraud" ? "active" : ""
+                                }`}
+                                disabled={savingStatus}
+                                onClick={() => submitStatus("confirmed_fraud")}
+                            >
+                                🚨 Confirm Fraud
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="notes-block">
+                        <p className="section-label">INVESTIGATION NOTES</p>
+
+                        {caseData.notes && caseData.notes.length > 0 && (
+                            <div className="notes-list">
+                                {caseData.notes.map((note, index) => (
+                                    <div className="note" key={index}>
+                                        <p>{note.text}</p>
+                                        <span>{formatDateTime(note.created_at)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <form className="note-form" onSubmit={submitNote}>
+                            <textarea
+                                value={noteDraft}
+                                onChange={(event) => setNoteDraft(event.target.value)}
+                                placeholder="e.g. Customer usually transacts between 10 AM and 6 PM. This one is at 11 PM from a new device."
+                                rows={3}
+                            />
+                            <button type="submit" disabled={savingNote || !noteDraft.trim()}>
+                                {savingNote ? "Saving..." : "Save Note"}
+                            </button>
+                        </form>
+                    </div>
+
                 </div>
             </div>
 
