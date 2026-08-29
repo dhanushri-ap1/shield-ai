@@ -348,47 +348,6 @@ def get_model(df):
     return model
 
 
-def _to_native(value):
-    try:
-        return value.item()
-    except AttributeError:
-        return value
-
-
-def model_risk_drivers(model, X_transaction, medians):
-    """
-    Approximate how much each feature raised the fraud
-    probability by replacing it with the training median.
-    """
-
-    baseline = float(
-        model.predict_proba(X_transaction)[0][1]
-    )
-
-    drivers = []
-
-    for feature in FEATURES:
-        altered = X_transaction.copy()
-        altered[feature] = medians[feature]
-        swapped = float(
-            model.predict_proba(altered)[0][1]
-        )
-        delta = baseline - swapped
-        drivers.append({
-            "feature": feature,
-            "label": FEATURE_LABELS.get(feature, feature),
-            "delta": round(delta, 4),
-            "raises_risk": delta > 0.005,
-        })
-
-    drivers.sort(
-        key=lambda item: abs(item["delta"]),
-        reverse=True,
-    )
-
-    return drivers
-
-
 def investigate_with_model(
     transaction_id
 ):
@@ -552,6 +511,15 @@ print(
 
 MODEL = get_model(
     MODEL_DATA
+)
+
+print(
+    "Scoring transaction risk queue..."
+)
+
+MODEL_DATA = attach_risk_scores(
+    MODEL_DATA,
+    MODEL
 )
 
 print(
