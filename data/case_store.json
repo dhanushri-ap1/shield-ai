@@ -10,5 +10,23 @@
     "status": "confirmed_fraud",
     "notes": [],
     "updated_at": "2026-08-29T23:03:01"
+  },
+  "e01cee6b-77eb-45ce-8724-486588956de3": {
+    "transaction_id": "e01cee6b-77eb-45ce-8724-486588956de3",
+    "status": "needs_review",
+    "notes": [],
+    "updated_at": "2026-08-29T23:26:20"
+  },
+  "79032184-b36d-42ce-b76c-ec9c0576f0bf": {
+    "transaction_id": "79032184-b36d-42ce-b76c-ec9c0576f0bf",
+    "status": "safe",
+    "notes": [],
+    "updated_at": "2026-08-29T23:26:25"
+  },
+  "d332fb58-1f56-4292-880b-3e6499ef25d8": {
+    "transaction_id": "d332fb58-1f56-4292-880b-3e6499ef25d8",
+    "status": "confirmed_fraud",
+    "notes": [],
+    "updated_at": "2026-08-29T23:26:29"
   }
 }
