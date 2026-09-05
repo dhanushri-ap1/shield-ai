@@ -1,5 +1,6 @@
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from pathlib import Path
 
 from ml.explanation_engine import (
     FEATURE_LABELS,
@@ -8,7 +9,7 @@ from ml.explanation_engine import (
 from ml.behavior_comparison import create_behavior_comparison
 
 
-DATA_PATH = "data/raw/transactions.csv"
+DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "raw" / "transactions.csv"
 
 
 FEATURES = [
